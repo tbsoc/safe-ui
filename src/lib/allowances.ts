@@ -5,6 +5,8 @@ import type { Call } from './multisend'
 import { getClient } from './rpc'
 
 export interface Allowance {
+  /** The Allowance Module deployment this allowance lives on. */
+  module: Address
   delegate: Address
   token: Address
   amount: bigint
@@ -72,6 +74,7 @@ export async function loadAllowances(chainId: number, module: Address, safe: Add
             args: [safe, delegate, token],
           })
           return {
+            module,
             delegate,
             token,
             amount,
@@ -87,6 +90,23 @@ export async function loadAllowances(chainId: number, module: Address, safe: Add
   // getTokens also lists deleted allowances (amount 0, no period); hide those.
   const allowances = perDelegate.flat().filter((a) => !(a.amount === 0n && a.resetTimeMin === 0))
   return { delegates, allowances }
+}
+
+export interface ModuleAllowances {
+  deployment: AllowanceModuleDeployment
+  delegates: Address[]
+  allowances: Allowance[]
+}
+
+/**
+ * Allowances from every Allowance Module enabled on the Safe. A Safe can have more than one
+ * enabled (e.g. both legacy deployments), and each keeps its own delegates and allowances.
+ */
+export async function loadAllAllowances(chainId: number, safe: Address, modules: Address[]): Promise<ModuleAllowances[]> {
+  const enabled = detectAllowanceModules(modules).filter((s) => s.enabled)
+  return Promise.all(
+    enabled.map(async ({ deployment }) => ({ deployment, ...(await loadAllowances(chainId, deployment.address, safe)) })),
+  )
 }
 
 export function remaining(a: Allowance): bigint {

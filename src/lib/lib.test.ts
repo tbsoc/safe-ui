@@ -2,7 +2,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { decodeFunctionData, encodeFunctionData, getAddress, parseEther, type Address, type Hex } from 'viem'
 import { describe, expect, it } from 'vitest'
 import { allowanceModuleAbi, multiSendAbi, safeAbi } from './abis'
-import { describePeriod, nextResetAt, setAllowanceCalls, type Allowance } from './allowances'
+import { activeModule, describePeriod, nextResetAt, setAllowanceCalls, type Allowance } from './allowances'
 import { MAX_UINT96, MULTI_SEND_CALL_ONLY, STANDARD_ALLOWANCE_MODULE } from './constants'
 import { decodeSafeTx } from './decode'
 import { formatAmount, parseAmount } from './format'
@@ -138,6 +138,18 @@ describe('allowance calls', () => {
     expect(calls.every((c) => c.to === legacy)).toBe(true)
   })
 
+  it('prefers the newest enabled legacy module when several are enabled', () => {
+    const both = ['0xAA46724893dedD72658219405185Fb0Fc91e091C', '0xCFbFaC74C26F8647cBDb8c5caf80BB5b32E43134'] as Address[]
+    expect(activeModule(both).deployment.version).toBe('0.1.1')
+    expect(activeModule([both[1]]).deployment.version).toBe('0.1.0')
+    expect(activeModule([]).deployment.version).toBe('1.0.0')
+    expect(activeModule([...both, STANDARD_ALLOWANCE_MODULE.address]).deployment.version).toBe('1.0.0')
+    // An explicit module override is honoured (used when editing an allowance on an older module).
+    const calls = setAllowanceCalls({ safe: SAFE, modules: both, delegates: [delegate], delegate, token, amount: 1n, resetTimeMin: 0, module: both[1] })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].to).toBe(both[1])
+  })
+
   it('validates amount and period bounds', () => {
     const base = { safe: SAFE, modules: [], delegates: [], delegate, token }
     expect(() => setAllowanceCalls({ ...base, amount: 0n, resetTimeMin: 0 })).toThrow()
@@ -147,7 +159,7 @@ describe('allowance calls', () => {
   })
 
   it('computes the next reset and describes periods', () => {
-    const a: Allowance = { delegate, token, amount: 1n, spent: 0n, resetTimeMin: 1440, lastResetMin: 1000, nonce: 1 }
+    const a: Allowance = { module: STANDARD_ALLOWANCE_MODULE.address, delegate, token, amount: 1n, spent: 0n, resetTimeMin: 1440, lastResetMin: 1000, nonce: 1 }
     expect(nextResetAt(a, (1000 + 10) * 60)).toBe((1000 + 1440) * 60)
     expect(nextResetAt(a, (1000 + 1440 * 2 + 5) * 60)).toBe((1000 + 1440 * 3) * 60)
     expect(nextResetAt({ ...a, resetTimeMin: 0 })).toBeUndefined()

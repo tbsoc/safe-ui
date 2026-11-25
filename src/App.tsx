@@ -25,7 +25,10 @@ const TABS: { id: Tab; label: string }[] = [
 ]
 
 /** Safes listed on the start screen. */
-const KNOWN_SAFES = [{ name: 'Bread Cooperative (Base)', ref: 'base:0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A' }]
+const KNOWN_SAFES = [
+  { name: 'Bread Coop core team treasury (Gnosis)', ref: 'gno:0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad' },
+  { name: 'Bread Cooperative (Base)', ref: 'base:0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A' },
+]
 
 interface SafeRef {
   chain: ChainConfig

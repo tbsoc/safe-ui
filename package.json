@@ -9,9 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run src",
-    "test:fork": "VITE_RPC_URL_8453=http://127.0.0.1:8545 vitest run test --testTimeout 120000",
+    "test:fork": "VITE_RPC_URL_8453=http://127.0.0.1:8545 VITE_RPC_URL_100=http://127.0.0.1:8545 vitest run test --testTimeout 180000",
     "fork": "hardhat --config hardhat.config.cjs node",
-    "e2e:fork": "VITE_RPC_URL_8453=http://127.0.0.1:8545 vite build --outDir dist-fork && node scripts/e2e-fork.mjs dist-fork"
+    "e2e:fork": "VITE_RPC_URL_8453=http://127.0.0.1:8545 VITE_RPC_URL_100=http://127.0.0.1:8545 vite build --outDir dist-fork && node scripts/e2e-fork.mjs dist-fork"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.108.4",

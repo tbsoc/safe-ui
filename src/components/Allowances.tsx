@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { getAddress, isAddress, isAddressEqual, toFunctionSelector, type Address } from 'viem'
 import { useAccount, useWriteContract } from 'wagmi'
 import { allowanceModuleAbi, erc20Abi } from '../lib/abis'
@@ -8,7 +8,7 @@ import {
   deleteAllowanceCall,
   describePeriod,
   detectAllowanceModules,
-  loadAllowances,
+  loadAllAllowances,
   nextResetAt,
   remaining,
   removeDelegateCall,
@@ -17,7 +17,7 @@ import {
   type Allowance,
 } from '../lib/allowances'
 import { explorerTx, NATIVE_TOKEN, type TokenInfo } from '../lib/chains'
-import { MAX_RESET_MINUTES, RESET_PRESETS, ZERO_ADDRESS } from '../lib/constants'
+import { allowanceModuleByAddress, MAX_RESET_MINUTES, RESET_PRESETS, ZERO_ADDRESS, type AllowanceModuleDeployment } from '../lib/constants'
 import { errorMessage, formatAmount, formatDateTime, parseAmount, relativeTime } from '../lib/format'
 import { getClient } from '../lib/rpc'
 import { fetchTokenInfo, tokenList } from '../lib/tokens'
@@ -29,26 +29,29 @@ export function Allowances() {
   const { chain, info, isOwner } = useSafe()
   const { address: account } = useAccount()
   const states = detectAllowanceModules(info.modules)
+  const enabled = states.filter((s) => s.enabled)
   const active = activeModule(info.modules)
-  const module = active.deployment.address
 
   const data = useQuery({
-    queryKey: ['allowances', chain.id, info.address, module, info.nonce.toString()],
+    queryKey: ['allowances', chain.id, info.address, info.modules.join(','), info.nonce.toString()],
     queryFn: async () => {
-      if (!active.enabled) return { delegates: [] as Address[], allowances: [] as Allowance[], tokens: {} as Record<string, TokenInfo> }
-      const res = await loadAllowances(chain.id, module, info.address)
-      const uniq = [...new Set(res.allowances.map((a) => a.token.toLowerCase()))] as Address[]
+      const perModule = await loadAllAllowances(chain.id, info.address, info.modules)
+      const allowances = perModule.flatMap((m) => m.allowances)
+      const uniq = [...new Set(allowances.map((a) => a.token.toLowerCase()))] as Address[]
       const infos = await Promise.all(uniq.map((t) => fetchTokenInfo(chain.id, t)))
       const tokens: Record<string, TokenInfo> = {}
       uniq.forEach((t, i) => (tokens[t] = infos[i]))
-      return { ...res, tokens }
+      return { perModule, allowances, tokens }
     },
   })
 
   const [editing, setEditing] = useState<Allowance>()
-  const mine = (data.data?.allowances ?? []).filter((a) => account && isAddressEqual(a.delegate, account))
+  const [formModule, setFormModule] = useState<Address>(active.deployment.address)
+  const mine = (data.data?.allowances ?? []).filter((a) => account && isAddressEqual(a.delegate, account) && a.amount > 0n)
   const owner = isOwner(account)
-  const legacyEnabled = states.filter((s) => s.enabled && !s.deployment.standard)
+  const formTarget = editing?.module ?? formModule
+  const formDelegates = data.data?.perModule.find((m) => isAddressEqual(m.deployment.address, formTarget))?.delegates ?? []
+  const hasLegacy = enabled.some((s) => !s.deployment.standard)
 
   return (
     <div className="stack">
@@ -58,22 +61,44 @@ export function Allowances() {
           reset on a schedule (for example every 30 days). Owners set and change allowances with a normal multisig transaction.
         </p>
         <dl className="dl">
-          <dt>Module in use</dt>
-          <dd>
-            v{active.deployment.version} <Addr address={module} chain={chain} />{' '}
-            {active.enabled ? <span className="tag ok">enabled</span> : <span className="tag warn">not enabled yet</span>}
-          </dd>
+          {enabled.length === 0 && (
+            <>
+              <dt>Module</dt>
+              <dd>
+                v{active.deployment.version} <Addr address={active.deployment.address} chain={chain} /> <span className="tag warn">not enabled yet</span>
+              </dd>
+            </>
+          )}
+          {enabled.map((s) => {
+            const m = data.data?.perModule.find((x) => isAddressEqual(x.deployment.address, s.deployment.address))
+            return (
+              <Fragment key={s.deployment.address}>
+                <dt>Enabled</dt>
+                <dd>
+                  v{s.deployment.version} <Addr address={s.deployment.address} chain={chain} />{' '}
+                  {m && <span className="tag">{m.allowances.filter((a) => a.amount > 0n).length} active allowance(s)</span>}
+                  {isAddressEqual(s.deployment.address, active.deployment.address) && enabled.length > 1 && <span className="tag ok">default for new</span>}
+                </dd>
+              </Fragment>
+            )
+          })}
         </dl>
-        {!active.enabled && (
+        {enabled.length === 0 && (
           <p className="muted small">
             The first allowance you create also enables the module, in the same transaction. Enabling a module lets it move funds according to its
             own rules (here: only within the allowances owners set).
           </p>
         )}
-        {legacyEnabled.length > 0 && !states.find((s) => s.deployment.standard)?.enabled && (
-          <p className="status warn">
-            This Safe uses legacy Allowance Module v{legacyEnabled[0].deployment.version}. It keeps working; the newer v1.0.0 fixes a nonce overflow
-            and handling of tokens that return false.
+        {enabled.length > 1 && (
+          <p className="muted small">
+            This Safe has more than one Allowance Module enabled. Each keeps its own members and allowances; all of them are listed below and every
+            change goes to the module the allowance lives on.
+          </p>
+        )}
+        {hasLegacy && (
+          <p className="muted small">
+            Legacy versions keep working. The newer v1.0.0 fixes a nonce overflow (only reachable after 65,535 transfers by one member) and the
+            handling of tokens that return false instead of reverting.
           </p>
         )}
       </Card>
@@ -81,7 +106,7 @@ export function Allowances() {
       {mine.length > 0 && (
         <Card title="Spend your allowance">
           {mine.map((a) => (
-            <SpendForm key={a.token} allowance={a} token={data.data!.tokens[a.token.toLowerCase()]} module={module} onDone={() => data.refetch()} />
+            <SpendForm key={`${a.module}-${a.token}`} allowance={a} token={data.data!.tokens[a.token.toLowerCase()]} onDone={() => data.refetch()} />
           ))}
         </Card>
       )}
@@ -101,7 +126,7 @@ export function Allowances() {
           <AllowanceTable
             allowances={data.data.allowances}
             tokens={data.data.tokens}
-            module={module}
+            showModule={enabled.length > 1}
             canManage={owner}
             onEdit={(a) => {
               setEditing(a)
@@ -109,15 +134,27 @@ export function Allowances() {
             }}
           />
         )}
-        {data.data && data.data.delegates.length > 0 && (
-          <DelegatesWithoutAllowance delegates={data.data.delegates} allowances={data.data.allowances} module={module} canManage={owner} />
+        {data.data?.perModule.map((m) =>
+          m.delegates.length > 0 ? (
+            <Members
+              key={m.deployment.address}
+              title={enabled.length > 1 ? `Members on v${m.deployment.version}` : 'Members (delegates)'}
+              delegates={m.delegates}
+              allowances={m.allowances}
+              module={m.deployment.address}
+              canManage={owner}
+            />
+          ) : null,
         )}
       </Card>
 
       <AllowanceForm
-        key={editing ? `${editing.delegate}-${editing.token}` : 'new'}
+        key={editing ? `${editing.module}-${editing.delegate}-${editing.token}` : `new-${formModule}`}
         editing={editing}
-        delegates={data.data?.delegates ?? []}
+        module={formTarget}
+        moduleChoices={enabled.length > 1 && !editing ? enabled.map((s) => s.deployment) : []}
+        onModuleChange={setFormModule}
+        delegates={formDelegates}
         onCancel={() => setEditing(undefined)}
         canManage={owner}
       />
@@ -128,7 +165,7 @@ export function Allowances() {
 function AllowanceTable(props: {
   allowances: Allowance[]
   tokens: Record<string, TokenInfo>
-  module: Address
+  showModule: boolean
   canManage: boolean
   onEdit: (a: Allowance) => void
 }) {
@@ -151,6 +188,7 @@ function AllowanceTable(props: {
           <thead>
             <tr>
               <th>Member</th>
+              {props.showModule && <th>Module</th>}
               <th>Token</th>
               <th className="num">Allowance</th>
               <th className="num">Spent</th>
@@ -164,10 +202,11 @@ function AllowanceTable(props: {
               const t = props.tokens[a.token.toLowerCase()] ?? { symbol: '?', decimals: 18, address: a.token }
               const next = nextResetAt(a)
               return (
-                <tr key={`${a.delegate}-${a.token}`}>
+                <tr key={`${a.module}-${a.delegate}-${a.token}`}>
                   <td>
                     <Addr address={a.delegate} chain={chain} />
                   </td>
+                  {props.showModule && <td>v{allowanceModuleByAddress(a.module)?.version}</td>}
                   <td>{t.symbol}</td>
                   <td className="num">{formatAmount(a.amount, t.decimals)}</td>
                   <td className="num">{formatAmount(a.spent, t.decimals)}</td>
@@ -181,7 +220,8 @@ function AllowanceTable(props: {
                     )}
                   </td>
                   {props.canManage && (
-                    <td className="row-actions">
+                    <td>
+                      <div className="row-actions">
                       <button type="button" className="btn small" onClick={() => props.onEdit(a)}>
                         Edit
                       </button>
@@ -190,7 +230,7 @@ function AllowanceTable(props: {
                         className="btn small"
                         disabled={a.spent === 0n}
                         onClick={() =>
-                          act(() => propose([resetAllowanceCall(props.module, a.delegate, a.token)], `Reset spent ${t.symbol} allowance of ${a.delegate}`))
+                          act(() => propose([resetAllowanceCall(a.module, a.delegate, a.token)], `Reset spent ${t.symbol} allowance of ${a.delegate}`))
                         }
                       >
                         Reset spent
@@ -199,11 +239,12 @@ function AllowanceTable(props: {
                         type="button"
                         className="btn small danger"
                         onClick={() =>
-                          act(() => propose([deleteAllowanceCall(props.module, a.delegate, a.token)], `Delete ${t.symbol} allowance of ${a.delegate}`))
+                          act(() => propose([deleteAllowanceCall(a.module, a.delegate, a.token)], `Delete ${t.symbol} allowance of ${a.delegate}`))
                         }
                       >
                         Delete
                       </button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -220,39 +261,48 @@ function AllowanceTable(props: {
   )
 }
 
-function DelegatesWithoutAllowance(props: { delegates: Address[]; allowances: Allowance[]; module: Address; canManage: boolean }) {
+function Members(props: { title: string; delegates: Address[]; allowances: Allowance[]; module: Address; canManage: boolean }) {
   const { chain, propose } = useSafe()
   const [error, setError] = useState<string>()
+  const count = (d: Address) => props.allowances.filter((a) => isAddressEqual(a.delegate, d)).length
+  const active = props.delegates.filter((d) => count(d) > 0)
+  const inactive = props.delegates.filter((d) => count(d) === 0)
+
+  const row = (d: Address) => (
+    <li key={d}>
+      <Addr address={d} chain={chain} full />
+      <span className="tag">{count(d)} allowance(s)</span>
+      {props.canManage && (
+        <button
+          type="button"
+          className="btn small danger"
+          onClick={async () => {
+            setError(undefined)
+            try {
+              await propose([removeDelegateCall(props.module, d)], `Remove member ${d} and all their allowances`)
+            } catch (e) {
+              setError(errorMessage(e))
+            }
+          }}
+        >
+          Remove member
+        </button>
+      )}
+    </li>
+  )
+
   return (
     <div className="sub">
-      <h3>Members (delegates)</h3>
-      <ul className="list">
-        {props.delegates.map((d) => {
-          const count = props.allowances.filter((a) => isAddressEqual(a.delegate, d)).length
-          return (
-            <li key={d}>
-              <Addr address={d} chain={chain} full />
-              <span className="tag">{count} allowance(s)</span>
-              {props.canManage && (
-                <button
-                  type="button"
-                  className="btn small danger"
-                  onClick={async () => {
-                    setError(undefined)
-                    try {
-                      await propose([removeDelegateCall(props.module, d)], `Remove member ${d} and all their allowances`)
-                    } catch (e) {
-                      setError(errorMessage(e))
-                    }
-                  }}
-                >
-                  Remove member
-                </button>
-              )}
-            </li>
-          )
-        })}
-      </ul>
+      <h3>{props.title}</h3>
+      {active.length > 0 && <ul className="list">{active.map(row)}</ul>}
+      {inactive.length > 0 && (
+        <details>
+          <summary>
+            {inactive.length} member(s) with no active allowance (still registered as delegates)
+          </summary>
+          <ul className="list">{inactive.map(row)}</ul>
+        </details>
+      )}
       <Status error={error} />
     </div>
   )
@@ -264,7 +314,15 @@ function toLocalInput(unixMin: number) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function AllowanceForm(props: { editing?: Allowance; delegates: Address[]; onCancel: () => void; canManage: boolean }) {
+function AllowanceForm(props: {
+  editing?: Allowance
+  module: Address
+  moduleChoices: AllowanceModuleDeployment[]
+  onModuleChange: (m: Address) => void
+  delegates: Address[]
+  onCancel: () => void
+  canManage: boolean
+}) {
   const { chain, info, propose } = useSafe()
   const tokens = tokenList(chain.id)
   const e = props.editing
@@ -321,11 +379,12 @@ function AllowanceForm(props: { editing?: Allowance; delegates: Address[]; onCan
         resetTimeMin: minutes,
         resetBaseMin: anchorMin,
         resetSpent,
+        module: props.module,
       })
     } catch {
       return undefined
     }
-  }, [delegate, parsed, minutes, anchorMin, resetSpent, effectiveToken.address, info, props.delegates])
+  }, [delegate, parsed, minutes, anchorMin, resetSpent, effectiveToken.address, info, props.delegates, props.module])
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault()
@@ -344,6 +403,7 @@ function AllowanceForm(props: { editing?: Allowance; delegates: Address[]; onCan
         resetTimeMin: minutes,
         resetBaseMin: anchorMin,
         resetSpent,
+        module: props.module,
       })
       await propose(calls, `${e ? 'Update' : 'Set'} allowance: ${amount} ${effectiveToken.symbol} ${describePeriod(minutes).toLowerCase()} for ${getAddress(delegate)}`)
     } catch (err) {
@@ -363,6 +423,17 @@ function AllowanceForm(props: { editing?: Allowance; delegates: Address[]; onCan
   return (
     <Card title={e ? 'Edit allowance' : 'Set an allowance'}>
       <form id="allowance-form" className="form" onSubmit={submit}>
+        {props.moduleChoices.length > 0 && (
+          <Field label="Module" htmlFor="al-module" hint="This Safe has several Allowance Modules enabled. Pick the one this allowance should live on.">
+            <select id="al-module" value={props.module} onChange={(x) => props.onModuleChange(x.target.value as Address)}>
+              {props.moduleChoices.map((m) => (
+                <option key={m.address} value={m.address}>
+                  v{m.version} ({m.address.slice(0, 6)}…{m.address.slice(-4)})
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Member address (delegate)" htmlFor="al-delegate" hint="An externally owned wallet, or a Safe that will call the module itself.">
           <input
             id="al-delegate"
@@ -470,7 +541,7 @@ function formatAmountPlain(v: bigint, decimals: number) {
   return frac ? `${int}.${frac}` : int
 }
 
-function SpendForm(props: { allowance: Allowance; token?: TokenInfo; module: Address; onDone: () => void }) {
+function SpendForm(props: { allowance: Allowance; token?: TokenInfo; onDone: () => void }) {
   const { chain, info } = useSafe()
   const a = props.allowance
   const t = props.token ?? { symbol: '?', decimals: 18, address: a.token }
@@ -494,8 +565,8 @@ function SpendForm(props: { allowance: Allowance; token?: TokenInfo; module: Add
       if (bal < parsed!) throw new Error(`The Safe only holds ${formatAmount(bal, t.decimals)} ${t.symbol}.`)
       // Empty signature = the module authenticates the delegate as msg.sender.
       const args = [info.address, t.address, getAddress(to), parsed!, ZERO_ADDRESS, 0n, acct, '0x'] as const
-      await client.simulateContract({ account: acct, address: props.module, abi: allowanceModuleAbi, functionName: 'executeAllowanceTransfer', args })
-      const hash = await writeContractAsync({ chainId: asChainId(chain.id), address: props.module, abi: allowanceModuleAbi, functionName: 'executeAllowanceTransfer', args })
+      await client.simulateContract({ account: acct, address: a.module, abi: allowanceModuleAbi, functionName: 'executeAllowanceTransfer', args })
+      const hash = await writeContractAsync({ chainId: asChainId(chain.id), address: a.module, abi: allowanceModuleAbi, functionName: 'executeAllowanceTransfer', args })
       const receipt = await client.waitForTransactionReceipt({ hash })
       if (receipt.status !== 'success') throw new Error('Transaction reverted')
       setTxHash(hash)

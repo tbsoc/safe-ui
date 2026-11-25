@@ -28,7 +28,8 @@ import {
   type SafeInfo,
 } from '../src/lib/safe'
 
-const RPC = process.env.VITE_RPC_URL_8453!
+const RPC = process.env.VITE_RPC_URL_8453 ?? 'http://127.0.0.1:8545'
+const RUN = (process.env.FORK_CHAIN ?? 'base') === 'base'
 const SAFE: Address = '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A'
 const WETH: Address = '0x4200000000000000000000000000000000000006'
 const MODULE = STANDARD_ALLOWANCE_MODULE.address
@@ -81,6 +82,7 @@ async function runSafeTx(info: SafeInfo, calls: Call[], signers: typeof ownerA[]
 let info: SafeInfo
 
 beforeAll(async () => {
+  if (!RUN) return
   for (const a of [ownerA, ownerB, ownerC, member, relayer]) await test.setBalance({ address: a.address, value: parseEther('10') })
   await test.setBalance({ address: SAFE, value: parseEther('5') })
   for (const o of [ownerA, ownerB, ownerC]) {
@@ -91,7 +93,7 @@ beforeAll(async () => {
   info = await loadSafeInfo(8453, SAFE)
 }, 120_000)
 
-describe('Bread Safe on a Base fork', () => {
+describe.runIf(RUN)('Bread Safe on a Base fork', () => {
   it('reads the Safe', () => {
     expect(info.version).toBe('1.5.0')
     expect(info.threshold).toBe(3)

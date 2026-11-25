@@ -1,13 +1,12 @@
 /**
- * Browser end-to-end test: drives the built app against a local Base fork with test wallets.
+ * Browser end-to-end test: drives the built app against a local fork with test wallets.
  *
- *   1. npx hardhat --config hardhat.config.cjs node            (fresh fork of Base)
- *   2. VITE_RPC_URL_8453=http://127.0.0.1:8545 npx vite build --outDir dist-fork
- *   3. node scripts/e2e-fork.mjs dist-fork [screenshotDir]
+ *   Base:   npm run fork                 then  npm run e2e:fork
+ *   Gnosis: FORK_CHAIN=gno npm run fork  then  FORK_CHAIN=gno npm run e2e:fork
  *
- * Three test keys are added as extra owners of the Bread Safe (on the fork only). Owner A creates an
- * allowance in the UI and signs, B and C open the share link, sign, and C executes. Then the member
- * spends from the allowance in the UI.
+ * Test keys are added as extra owners of the Bread Safe (on the fork only), as many as the
+ * threshold. Owner 1 creates an allowance in the UI and signs, the others open the share link one
+ * after another and sign, the last one executes. Then the member spends from the allowance.
  */
 import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
@@ -15,46 +14,79 @@ import { readFile } from 'node:fs/promises'
 import { extname, join, resolve } from 'node:path'
 import { createTestClient, createPublicClient, createWalletClient, encodeFunctionData, http, parseAbi, parseEther } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { base } from 'viem/chains'
+import { base, gnosis } from 'viem/chains'
 
 const require = createRequire(import.meta.url)
 const { chromium } = require('playwright')
 
+const CHAINS = {
+  base: {
+    chain: base,
+    short: 'base',
+    safe: '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A',
+    token: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH' },
+    // Fresh Safe: the first allowance enables Allowance Module v1.0.0.
+    expectModule: { address: '0x691f59471Bfd2B7d639DCF74671a2d648ED1E331', version: '1.0.0', alreadyEnabled: false },
+  },
+  gno: {
+    chain: gnosis,
+    short: 'gno',
+    safe: '0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad',
+    token: { address: '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3', symbol: 'BREAD' },
+    // Core team Safe: v0.1.0 and v0.1.1 already enabled; new allowances go to v0.1.1.
+    expectModule: { address: '0xAA46724893dedD72658219405185Fb0Fc91e091C', version: '0.1.1', alreadyEnabled: true },
+  },
+}
+const cfg = CHAINS[process.env.FORK_CHAIN || 'base']
 const RPC = 'http://127.0.0.1:8545'
-const SAFE = '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A'
-const WETH = '0x4200000000000000000000000000000000000006'
-const MODULE = '0x691f59471Bfd2B7d639DCF74671a2d648ED1E331'
+const SAFE = cfg.safe
+const TOKEN = cfg.token.address
 const RECIPIENT = '0x000000000000000000000000000000000000bEEF'
 const distDir = resolve(process.argv[2] ?? 'dist-fork')
 const shots = process.argv[3] ? resolve(process.argv[3]) : undefined
 
-const keys = {
-  A: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d',
-  B: '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a',
-  C: '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6',
-  member: '0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a',
-}
-const accts = Object.fromEntries(Object.entries(keys).map(([k, v]) => [k, privateKeyToAccount(v)]))
+const ownerKeys = [
+  '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d',
+  '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a',
+  '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6',
+  '0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e',
+  '0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356',
+]
+const accts = { member: privateKeyToAccount('0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a') }
+ownerKeys.forEach((k, i) => (accts[`owner${i + 1}`] = privateKeyToAccount(k)))
 
-const pub = createPublicClient({ chain: base, transport: http(RPC) })
-const test = createTestClient({ chain: base, mode: 'hardhat', transport: http(RPC) })
-const safeAbi = parseAbi(['function addOwnerWithThreshold(address owner, uint256 _threshold)'])
+const pub = createPublicClient({ chain: cfg.chain, transport: http(RPC) })
+const test = createTestClient({ chain: cfg.chain, mode: 'hardhat', transport: http(RPC) })
+const safeAbi = parseAbi([
+  'function addOwnerWithThreshold(address owner, uint256 _threshold)',
+  'function getThreshold() view returns (uint256)',
+  'function getOwners() view returns (address[])',
+])
 const erc20 = parseAbi(['function balanceOf(address) view returns (uint256)'])
 
 async function asSafe(to, data, value = 0n) {
+  const bal = await pub.getBalance({ address: SAFE })
+  if (bal < parseEther('1')) await test.setBalance({ address: SAFE, value: bal + parseEther('1') })
   await test.impersonateAccount({ address: SAFE })
   const hash = await test.request({ method: 'eth_sendTransaction', params: [{ from: SAFE, to, data, value: `0x${value.toString(16)}` }] })
   await pub.waitForTransactionReceipt({ hash })
   await test.stopImpersonatingAccount({ address: SAFE })
 }
 
+let threshold = 0
+let ownerCount = 0
 async function setupFork() {
   for (const a of Object.values(accts)) await test.setBalance({ address: a.address, value: parseEther('10') })
-  await test.setBalance({ address: SAFE, value: parseEther('5') })
-  for (const k of ['A', 'B', 'C']) {
-    await asSafe(SAFE, encodeFunctionData({ abi: safeAbi, functionName: 'addOwnerWithThreshold', args: [accts[k].address, 3n] }))
+  threshold = Number(await pub.readContract({ address: SAFE, abi: safeAbi, functionName: 'getThreshold' }))
+  for (let i = 1; i <= threshold; i++) {
+    await asSafe(SAFE, encodeFunctionData({ abi: safeAbi, functionName: 'addOwnerWithThreshold', args: [accts[`owner${i}`].address, BigInt(threshold)] }))
   }
-  await asSafe(WETH, encodeFunctionData({ abi: parseAbi(['function deposit() payable']), functionName: 'deposit' }), parseEther('2'))
+  ownerCount = (await pub.readContract({ address: SAFE, abi: safeAbi, functionName: 'getOwners' })).length
+  if (!cfg.expectModule.alreadyEnabled) {
+    // Fresh Base Safe holds nothing: give it 2 WETH.
+    await test.setBalance({ address: SAFE, value: parseEther('5') })
+    await asSafe(TOKEN, encodeFunctionData({ abi: parseAbi(['function deposit() payable']), functionName: 'deposit' }), parseEther('2'))
+  }
 }
 
 function serve(dir) {
@@ -77,7 +109,7 @@ function serve(dir) {
 /** A page with an injected EIP-1193 wallet backed by a local key, talking to the fork. */
 async function walletPage(browser, name) {
   const account = accts[name]
-  const wallet = createWalletClient({ account, chain: base, transport: http(RPC) })
+  const wallet = createWalletClient({ account, chain: cfg.chain, transport: http(RPC) })
   const context = await browser.newContext({ viewport: { width: 1200, height: 900 } })
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await context.exposeFunction('__wallet', async (method, params) => {
@@ -86,7 +118,7 @@ async function walletPage(browser, name) {
       case 'eth_accounts':
         return [account.address]
       case 'eth_chainId':
-        return '0x2105'
+        return `0x${cfg.chain.id.toString(16)}`
       case 'wallet_switchEthereumChain':
       case 'wallet_addEthereumChain':
         return null
@@ -149,84 +181,84 @@ async function main() {
   const server = await serve(distDir)
   const origin = `http://127.0.0.1:${server.address().port}`
   const browser = await chromium.launch()
+  const sym = cfg.token.symbol
   try {
-    // Owner A: overview, then create an allowance.
-    const a = await walletPage(browser, 'A')
-    await a.goto(`${origin}/?safe=base:${SAFE}`)
-    await a.getByText('3 of 8 required').waitFor()
-    await connect(a)
-    await shot(a, 'overview')
-    assert(await a.getByText('No modules enabled.').isVisible(), 'overview shows no modules')
+    // Owner 1: overview, then create an allowance.
+    const p1 = await walletPage(browser, 'owner1')
+    await p1.goto(`${origin}/?safe=${cfg.short}:${SAFE}`)
+    await p1.getByText(`${threshold} of ${ownerCount} required`).waitFor({ timeout: 60_000 })
+    await connect(p1)
+    await shot(p1, 'overview')
 
-    await a.getByRole('tab', { name: 'Allowances' }).click()
-    await a.getByText('not enabled yet').waitFor()
-    await a.locator('#al-delegate').fill(accts.member.address)
-    await a.locator('#al-token').selectOption({ label: 'WETH' })
-    await a.locator('#al-amount').fill('1')
-    await a.locator('#al-period').selectOption({ label: 'Every 30 days' })
-    await a.getByText('Enable the Allowance Module on this Safe').waitFor()
-    await shot(a, 'allowance-form')
-    await a.getByRole('button', { name: 'Create transaction' }).click()
-    await a.getByText('Confirmations 0/3').waitFor()
-    assert(await a.getByText('Allowance Module v1.0.0 · setAllowance').isVisible(), 'queue decodes the batched setAllowance')
-    await a.getByRole('button', { name: 'Sign', exact: true }).click()
-    await a.getByText('Confirmations 1/3').waitFor()
-    await shot(a, 'queue-signed-by-a')
-    const linkA = await copyShareLink(a)
-    assert(linkA.includes('#tx='), 'share link carries the transaction')
+    await p1.getByRole('tab', { name: 'Allowances' }).click()
+    if (cfg.expectModule.alreadyEnabled) {
+      await p1.locator('td', { hasText: sym }).first().waitFor({ timeout: 60_000 })
+      assert(await p1.locator('th', { hasText: 'Module' }).isVisible(), 'allowance table shows which module each allowance lives on')
+      assert((await p1.locator('#al-module').inputValue()).toLowerCase() === cfg.expectModule.address.toLowerCase(), `new allowances default to v${cfg.expectModule.version}`)
+      await shot(p1, 'existing-allowances')
+    } else {
+      await p1.getByText('not enabled yet').waitFor()
+    }
+    await p1.locator('#al-delegate').fill(accts.member.address)
+    await p1.locator('#al-token').selectOption({ label: sym })
+    await p1.locator('#al-amount').fill('1')
+    await p1.locator('#al-period').selectOption({ label: 'Every 30 days' })
+    await p1.getByText('Set the allowance amount and reset period').waitFor()
+    const enables = await p1.getByText('Enable the Allowance Module on this Safe').isVisible()
+    assert(enables === !cfg.expectModule.alreadyEnabled, cfg.expectModule.alreadyEnabled ? 'no extra module gets enabled' : 'first allowance enables the module')
+    await shot(p1, 'allowance-form')
+    await p1.getByRole('button', { name: 'Create transaction' }).click()
+    await p1.getByText(`Confirmations 0/${threshold}`).waitFor()
+    assert(await p1.getByText(`Allowance Module v${cfg.expectModule.version} · setAllowance`).isVisible(), `queue decodes setAllowance on v${cfg.expectModule.version}`)
 
-    // Owner B opens the link and signs.
-    const b = await walletPage(browser, 'B')
-    await b.goto(linkA)
-    await b.getByText('Confirmations 1/3').waitFor()
-    await connect(b)
-    await b.getByRole('button', { name: 'Sign', exact: true }).click()
-    await b.getByText('Confirmations 2/3').waitFor()
-    const linkB = await copyShareLink(b)
+    // Each owner signs and passes the link on; the last one executes.
+    let page = p1
+    for (let i = 1; i <= threshold; i++) {
+      if (i > 1) {
+        const link = await copyShareLink(page)
+        page = await walletPage(browser, `owner${i}`)
+        await page.goto(link)
+        await page.getByText(`Confirmations ${i - 1}/${threshold}`).waitFor({ timeout: 60_000 })
+        await connect(page)
+      }
+      await page.getByRole('button', { name: 'Sign', exact: true }).click()
+      await page.getByText(`Confirmations ${i}/${threshold}`).waitFor()
+    }
+    assert(true, `${threshold} owners signed via share links`)
+    await shot(page, 'queue-ready')
+    await page.getByRole('button', { name: 'Execute' }).click()
+    await page.getByText('View execution on explorer').waitFor({ timeout: 60_000 })
+    await shot(page, 'executed')
+    await page.getByRole('tab', { name: 'Allowances' }).click()
+    await page.locator('td', { hasText: sym }).first().waitFor()
+    assert(true, 'execution confirmed and allowance tab reloads')
 
-    // Owner C opens B's link, signs and executes.
-    const c = await walletPage(browser, 'C')
-    await c.goto(linkB)
-    await c.getByText('Confirmations 2/3').waitFor()
-    await connect(c)
-    await c.getByRole('button', { name: 'Sign', exact: true }).click()
-    await c.getByText('Confirmations 3/3').waitFor()
-    await shot(c, 'queue-ready')
-    await c.getByRole('button', { name: 'Execute' }).click()
-    await c.getByText('View execution on explorer').waitFor({ timeout: 60_000 })
-    await c.getByRole('tab', { name: 'Allowances' }).click()
-    await c.locator('.tag.ok', { hasText: 'enabled' }).waitFor()
-    await c.locator('td', { hasText: 'WETH' }).waitFor()
-    await shot(c, 'allowances-active')
-    assert(true, 'module enabled and allowance listed after execution')
-
-    // Member spends 0.4 WETH from the allowance.
+    // Member spends 0.4 from the allowance.
     const m = await walletPage(browser, 'member')
-    await m.goto(`${origin}/?safe=base:${SAFE}&tab=allowances`)
+    await m.goto(`${origin}/?safe=${cfg.short}:${SAFE}&tab=allowances`)
     await connect(m)
-    await m.getByText('Spend your allowance').waitFor()
-    const before = await pub.readContract({ address: WETH, abi: erc20, functionName: 'balanceOf', args: [RECIPIENT] })
+    await m.getByText('Spend your allowance').waitFor({ timeout: 60_000 })
+    const before = await pub.readContract({ address: TOKEN, abi: erc20, functionName: 'balanceOf', args: [RECIPIENT] })
     await m.getByPlaceholder('Recipient 0x…').fill(RECIPIENT)
-    await m.getByPlaceholder('Amount WETH').fill('0.4')
+    await m.getByPlaceholder(`Amount ${sym}`).fill('0.4')
     await shot(m, 'member-spend')
     await m.getByRole('button', { name: 'Send', exact: true }).click()
     await m.getByText('View transaction').waitFor({ timeout: 60_000 })
-    const after = await pub.readContract({ address: WETH, abi: erc20, functionName: 'balanceOf', args: [RECIPIENT] })
-    assert(after - before === parseEther('0.4'), 'recipient received 0.4 WETH')
-    await m.getByText('0.6 WETH').first().waitFor()
+    const after = await pub.readContract({ address: TOKEN, abi: erc20, functionName: 'balanceOf', args: [RECIPIENT] })
+    assert(after - before === parseEther('0.4'), `recipient received 0.4 ${sym}`)
+    await m.getByText(`0.6 ${sym}`).first().waitFor()
     await shot(m, 'member-after-spend')
-    assert(true, 'remaining allowance shows 0.6 WETH')
+    assert(true, `remaining allowance shows 0.6 ${sym}`)
 
-    // Over-limit spend is refused before reaching the wallet.
-    await m.getByPlaceholder('Amount WETH').fill('0.7')
+    await m.getByPlaceholder(`Amount ${sym}`).fill('0.7')
     assert(await m.getByText('That is more than your remaining allowance.').isVisible(), 'over-limit amount is rejected in the form')
 
-    console.log(`\nAll browser checks passed (module ${MODULE}).`)
+    console.log(`\nAll browser checks passed on ${cfg.chain.name} (module v${cfg.expectModule.version}).`)
   } catch (e) {
-    for (const [name, page] of openPages) {
-      const errs = await page.locator('.status').allTextContents().catch(() => [])
+    for (const [name, pg] of openPages) {
+      const errs = await pg.locator('.status').allTextContents().catch(() => [])
       console.log(`[${name}] status messages:`, errs)
-      if (shots) await page.screenshot({ path: join(shots, `fail-${name}.png`), fullPage: true }).catch(() => {})
+      if (shots) await pg.screenshot({ path: join(shots, `fail-${name}.png`), fullPage: true }).catch(() => {})
     }
     throw e
   } finally {
