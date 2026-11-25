@@ -27,7 +27,7 @@ The [Allowance Module](https://github.com/safe-global/safe-modules/tree/main/mod
 - **Members** spend up to that amount on their own, without collecting signatures, by calling the module from their wallet.
 - The allowance refills every period (daily, weekly, every 30 days…) or never (one-time).
 
-This app uses **Allowance Module v1.0.0** (`0x691f59471Bfd2B7d639DCF74671a2d648ED1E331`, same address on all three chains) for new setups. It fixes a nonce overflow and the handling of tokens that return `false`. If a Safe already has a legacy version enabled (`0.1.0` at `0xCFbF…3134` or `0.1.1` at `0xAA46…091C`), the app detects it and keeps using it.
+This app uses **Allowance Module v1.0.0** (`0x691f59471Bfd2B7d639DCF74671a2d648ED1E331`, same address on all three chains) for new setups. It fixes a nonce overflow and the handling of tokens that return `false`. If a Safe already has a legacy version enabled (`0.1.0` at `0xCFbF…3134` or `0.1.1` at `0xAA46…091C`), the app detects it and keeps using it. A Safe can have more than one enabled (the Bread core team Safe on Gnosis has both): the app lists allowances from all of them, sends every change to the module the allowance lives on, and defaults new allowances to the newest enabled one.
 
 Limits of the contract worth knowing:
 
@@ -64,13 +64,23 @@ Optional build-time settings (Vercel/Netlify environment variables):
 
 ### Fork tests
 
-These run the real Bread Base Safe and the real module on a local copy of Base. They add three test keys as extra owners on the fork only.
+These run the real Bread Safes and modules on a local copy of the chain. They add test keys as extra owners on the fork only.
+
+| Chain | Safe | What it covers |
+| --- | --- | --- |
+| Base (default) | `0x6406…102A`, fresh, no modules | First allowance enables v1.0.0 in one transaction |
+| Gnosis (`FORK_CHAIN=gno`) | `0x918d…99ad`, core team, v0.1.0 + v0.1.1 enabled | Reads both modules, edits go to the right one, no third module added |
 
 ```bash
-npm run fork               # terminal 1: local Base fork on :8545
-npm run test:fork          # terminal 2: library-level end-to-end tests
+npm run fork                    # terminal 1: local Base fork on :8545
+npm run test:fork               # terminal 2: library-level end-to-end tests
 # restart the fork for a clean state, then:
-npm run e2e:fork           # browser test: 3 owners sign + execute via share links, member spends
+npm run e2e:fork                # browser test: owners sign + execute via share links, member spends
+
+# same for Gnosis:
+FORK_CHAIN=gno npm run fork
+FORK_CHAIN=gno npm run test:fork
+FORK_CHAIN=gno npm run e2e:fork
 ```
 
 ## Deploying
