@@ -4,6 +4,8 @@
  *   Base:   npm run fork                 then  npm run e2e:fork
  *   Gnosis: FORK_CHAIN=gno npm run fork  then  FORK_CHAIN=gno npm run e2e:fork
  *
+ * Ethereum, Optimism, Celo: FORK_CHAIN=eth|oeth|celo FORK_SAFE=0x… (any Safe; only the fork is touched)
+ *
  * Test keys are added as extra owners of the Bread Safe (on the fork only), as many as the
  * threshold. Owner 1 creates an allowance in the UI and signs, the others open the share link one
  * after another and sign, the last one executes. Then the member spends from the allowance.
@@ -14,30 +16,40 @@ import { readFile } from 'node:fs/promises'
 import { extname, join, resolve } from 'node:path'
 import { createTestClient, createPublicClient, createWalletClient, encodeFunctionData, http, parseAbi, parseEther } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { base, gnosis } from 'viem/chains'
+import { base, celo, gnosis, mainnet, optimism } from 'viem/chains'
 
 const require = createRequire(import.meta.url)
 const { chromium } = require('playwright')
 
+const WETH_FUND = 'weth'
+const NATIVE = '0x0000000000000000000000000000000000000000'
 const CHAINS = {
   base: {
     chain: base,
     short: 'base',
-    safe: '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A',
-    token: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH' },
-    // Fresh Safe: the first allowance enables Allowance Module v1.0.0.
-    expectModule: { address: '0x691f59471Bfd2B7d639DCF74671a2d648ED1E331', version: '1.0.0', alreadyEnabled: false },
+    safe: '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A', // Bread Cooperative
+    token: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', fund: WETH_FUND },
   },
   gno: {
     chain: gnosis,
     short: 'gno',
-    safe: '0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad',
+    safe: '0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad', // Bread Coop core team (holds BREAD already)
     token: { address: '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3', symbol: 'BREAD' },
-    // Core team Safe: v0.1.0 and v0.1.1 already enabled; new allowances go to v0.1.1.
-    expectModule: { address: '0xAA46724893dedD72658219405185Fb0Fc91e091C', version: '0.1.1', alreadyEnabled: true },
   },
+  // No Bread Safe on these yet: pass any Safe address with FORK_SAFE=0x… (only the local fork is touched).
+  eth: { chain: mainnet, short: 'eth', token: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', symbol: 'WETH', fund: WETH_FUND } },
+  oeth: { chain: optimism, short: 'oeth', token: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', fund: WETH_FUND } },
+  celo: { chain: celo, short: 'celo', token: { address: NATIVE, symbol: 'CELO', fund: 'native' } },
 }
+const MODULES = [
+  { address: '0x691f59471Bfd2B7d639DCF74671a2d648ED1E331', version: '1.0.0' },
+  { address: '0xAA46724893dedD72658219405185Fb0Fc91e091C', version: '0.1.1' },
+  { address: '0xCFbFaC74C26F8647cBDb8c5caf80BB5b32E43134', version: '0.1.0' },
+]
 const cfg = CHAINS[process.env.FORK_CHAIN || 'base']
+if (!cfg) throw new Error(`Unknown FORK_CHAIN; use one of ${Object.keys(CHAINS).join(', ')}`)
+cfg.safe = process.env.FORK_SAFE || cfg.safe
+if (!cfg.safe) throw new Error(`Set FORK_SAFE=0x… to a Safe on ${cfg.chain.name}`)
 const RPC = 'http://127.0.0.1:8545'
 const SAFE = cfg.safe
 const TOKEN = cfg.token.address
@@ -61,12 +73,13 @@ const safeAbi = parseAbi([
   'function addOwnerWithThreshold(address owner, uint256 _threshold)',
   'function getThreshold() view returns (uint256)',
   'function getOwners() view returns (address[])',
+  'function getModulesPaginated(address start, uint256 pageSize) view returns (address[] array, address next)',
 ])
 const erc20 = parseAbi(['function balanceOf(address) view returns (uint256)'])
 
 async function asSafe(to, data, value = 0n) {
   const bal = await pub.getBalance({ address: SAFE })
-  if (bal < parseEther('1')) await test.setBalance({ address: SAFE, value: bal + parseEther('1') })
+  if (bal < parseEther('100')) await test.setBalance({ address: SAFE, value: bal + parseEther('100') })
   await test.impersonateAccount({ address: SAFE })
   const hash = await test.request({ method: 'eth_sendTransaction', params: [{ from: SAFE, to, data, value: `0x${value.toString(16)}` }] })
   await pub.waitForTransactionReceipt({ hash })
@@ -76,18 +89,32 @@ async function asSafe(to, data, value = 0n) {
 let threshold = 0
 let ownerCount = 0
 async function setupFork() {
-  for (const a of Object.values(accts)) await test.setBalance({ address: a.address, value: parseEther('10') })
+  for (const a of Object.values(accts)) await test.setBalance({ address: a.address, value: parseEther('1000') })
   threshold = Number(await pub.readContract({ address: SAFE, abi: safeAbi, functionName: 'getThreshold' }))
   for (let i = 1; i <= threshold; i++) {
     await asSafe(SAFE, encodeFunctionData({ abi: safeAbi, functionName: 'addOwnerWithThreshold', args: [accts[`owner${i}`].address, BigInt(threshold)] }))
   }
   ownerCount = (await pub.readContract({ address: SAFE, abi: safeAbi, functionName: 'getOwners' })).length
-  if (!cfg.expectModule.alreadyEnabled) {
-    // Fresh Base Safe holds nothing: give it 2 WETH.
+  const guard = await pub.getStorageAt({ address: SAFE, slot: '0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8' })
+  if (guard && BigInt(guard) !== 0n) throw new Error('This Safe has a transaction guard; pick another one for the test')
+  if (cfg.token.fund === WETH_FUND) {
     await test.setBalance({ address: SAFE, value: parseEther('5') })
     await asSafe(TOKEN, encodeFunctionData({ abi: parseAbi(['function deposit() payable']), functionName: 'deposit' }), parseEther('2'))
+  } else if (cfg.token.fund === 'native') {
+    await test.setBalance({ address: SAFE, value: parseEther('5') })
   }
+  // Same rule as the app: newest enabled allowance module, else v1.0.0 (enabled by the first allowance).
+  const [mods] = await pub.readContract({ address: SAFE, abi: safeAbi, functionName: 'getModulesPaginated', args: ['0x0000000000000000000000000000000000000001', 50n] })
+  const enabled = MODULES.filter((m) => mods.some((x) => x.toLowerCase() === m.address.toLowerCase()))
+  enabledCount = enabled.length
+  expectModule = enabled[0] ? { ...enabled[0], alreadyEnabled: true } : { ...MODULES[0], alreadyEnabled: false }
+  console.log(`  ${cfg.chain.name} Safe ${SAFE}: ${threshold} of ${ownerCount} (with test signers), ${mods.length} module(s), allowance module ${expectModule.alreadyEnabled ? 'v' + expectModule.version + ' enabled' : 'not enabled'}`)
 }
+
+let expectModule
+let enabledCount = 0
+const balanceOf = (a) =>
+  TOKEN === NATIVE ? pub.getBalance({ address: a }) : pub.readContract({ address: TOKEN, abi: erc20, functionName: 'balanceOf', args: [a] })
 
 function serve(dir) {
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }
@@ -191,12 +218,12 @@ async function main() {
     await shot(p1, 'overview')
 
     await p1.getByRole('tab', { name: 'Allowances' }).click()
-    if (cfg.expectModule.alreadyEnabled) {
+    if (enabledCount > 1) {
       await p1.locator('td', { hasText: sym }).first().waitFor({ timeout: 60_000 })
       assert(await p1.locator('th', { hasText: 'Module' }).isVisible(), 'allowance table shows which module each allowance lives on')
-      assert((await p1.locator('#al-module').inputValue()).toLowerCase() === cfg.expectModule.address.toLowerCase(), `new allowances default to v${cfg.expectModule.version}`)
+      assert((await p1.locator('#al-module').inputValue()).toLowerCase() === expectModule.address.toLowerCase(), `new allowances default to v${expectModule.version}`)
       await shot(p1, 'existing-allowances')
-    } else {
+    } else if (!expectModule.alreadyEnabled) {
       await p1.getByText('not enabled yet').waitFor()
     }
     await p1.locator('#al-delegate').fill(accts.member.address)
@@ -205,11 +232,11 @@ async function main() {
     await p1.locator('#al-period').selectOption({ label: 'Every 30 days' })
     await p1.getByText('Set the allowance amount and reset period').waitFor()
     const enables = await p1.getByText('Enable the Allowance Module on this Safe').isVisible()
-    assert(enables === !cfg.expectModule.alreadyEnabled, cfg.expectModule.alreadyEnabled ? 'no extra module gets enabled' : 'first allowance enables the module')
+    assert(enables === !expectModule.alreadyEnabled, expectModule.alreadyEnabled ? 'no extra module gets enabled' : 'first allowance enables the module')
     await shot(p1, 'allowance-form')
     await p1.getByRole('button', { name: 'Create transaction' }).click()
     await p1.getByText(`Confirmations 0/${threshold}`).waitFor()
-    assert(await p1.getByText(`Allowance Module v${cfg.expectModule.version} · setAllowance`).isVisible(), `queue decodes setAllowance on v${cfg.expectModule.version}`)
+    assert(await p1.getByText(`Allowance Module v${expectModule.version} · setAllowance`).isVisible(), `queue decodes setAllowance on v${expectModule.version}`)
 
     // Each owner signs and passes the link on; the last one executes.
     let page = p1
@@ -238,13 +265,13 @@ async function main() {
     await m.goto(`${origin}/?safe=${cfg.short}:${SAFE}&tab=allowances`)
     await connect(m)
     await m.getByText('Spend your allowance').waitFor({ timeout: 60_000 })
-    const before = await pub.readContract({ address: TOKEN, abi: erc20, functionName: 'balanceOf', args: [RECIPIENT] })
+    const before = await balanceOf(RECIPIENT)
     await m.getByPlaceholder('Recipient 0x…').fill(RECIPIENT)
     await m.getByPlaceholder(`Amount ${sym}`).fill('0.4')
     await shot(m, 'member-spend')
     await m.getByRole('button', { name: 'Send', exact: true }).click()
     await m.getByText('View transaction').waitFor({ timeout: 60_000 })
-    const after = await pub.readContract({ address: TOKEN, abi: erc20, functionName: 'balanceOf', args: [RECIPIENT] })
+    const after = await balanceOf(RECIPIENT)
     assert(after - before === parseEther('0.4'), `recipient received 0.4 ${sym}`)
     await m.getByText(`0.6 ${sym}`).first().waitFor()
     await shot(m, 'member-after-spend')
@@ -253,7 +280,7 @@ async function main() {
     await m.getByPlaceholder(`Amount ${sym}`).fill('0.7')
     assert(await m.getByText('That is more than your remaining allowance.').isVisible(), 'over-limit amount is rejected in the form')
 
-    console.log(`\nAll browser checks passed on ${cfg.chain.name} (module v${cfg.expectModule.version}).`)
+    console.log(`\nAll browser checks passed on ${cfg.chain.name} (module v${expectModule.version}).`)
   } catch (e) {
     for (const [name, pg] of openPages) {
       const errs = await pg.locator('.status').allTextContents().catch(() => [])

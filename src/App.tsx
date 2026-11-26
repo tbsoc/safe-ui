@@ -200,7 +200,7 @@ function Landing({ onOpen }: { onOpen: (r: SafeRef) => void }) {
   return (
     <main className="landing">
       <h1>Open a Safe</h1>
-      <p className="muted">Works with Safe multisigs (v1.3.0+) on Ethereum, Base and Gnosis.</p>
+      <p className="muted">Works with Safe multisigs (v1.3.0+) on Ethereum, Base, Gnosis, Optimism and Celo.</p>
       <form className="form" onSubmit={submit}>
         <div className="form inline">
           <select value={chainShort} onChange={(e) => setChainShort(e.target.value)} aria-label="Network">

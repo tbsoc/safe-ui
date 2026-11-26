@@ -1,5 +1,5 @@
 import { createConfig, fallback, http } from 'wagmi'
-import { base, gnosis, mainnet } from 'wagmi/chains'
+import { base, celo, gnosis, mainnet, optimism } from 'wagmi/chains'
 import { injected, walletConnect } from 'wagmi/connectors'
 import { chainById } from './lib/chains'
 import { rpcUrls } from './lib/rpc'
@@ -9,7 +9,7 @@ const wcProjectId = import.meta.env.VITE_WC_PROJECT_ID as string | undefined
 const transport = (id: number) => fallback(rpcUrls(chainById(id)!).map((u) => http(u)))
 
 export const wagmiConfig = createConfig({
-  chains: [base, gnosis, mainnet],
+  chains: [base, gnosis, mainnet, optimism, celo],
   connectors: [
     injected(),
     ...(wcProjectId
@@ -30,6 +30,8 @@ export const wagmiConfig = createConfig({
     [base.id]: transport(base.id),
     [gnosis.id]: transport(gnosis.id),
     [mainnet.id]: transport(mainnet.id),
+    [optimism.id]: transport(optimism.id),
+    [celo.id]: transport(celo.id),
   },
 })
 

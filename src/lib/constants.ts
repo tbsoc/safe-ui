@@ -6,12 +6,14 @@ export interface AllowanceModuleDeployment {
   /** Recommended for new setups. */
   standard: boolean
   note: string
+  /** Chains where this version was never deployed (checked with eth_getCode). */
+  missingOn?: number[]
 }
 
 /**
- * Every Allowance Module deployment. All three are deployed at the same address on
- * Ethereum, Base and Gnosis (verified with eth_getCode). A Safe may have any of them enabled,
- * so the app detects which one is active instead of assuming.
+ * Every Allowance Module deployment. Each version uses the same address on every chain where it
+ * exists; `missingOn` lists the supported chains where it does not (run `npm run verify:chains`).
+ * A Safe may have any of them enabled, so the app detects which one is active instead of assuming.
  */
 export const ALLOWANCE_MODULES: AllowanceModuleDeployment[] = [
   {
@@ -24,7 +26,8 @@ export const ALLOWANCE_MODULES: AllowanceModuleDeployment[] = [
     version: '0.1.1',
     address: '0xAA46724893dedD72658219405185Fb0Fc91e091C',
     standard: false,
-    note: 'Legacy deployment used by Safe{Wallet} on Base and Gnosis.',
+    note: 'Legacy deployment used by Safe{Wallet} on Base, Gnosis and Optimism.',
+    missingOn: [42220],
   },
   {
     version: '0.1.0',
@@ -36,11 +39,16 @@ export const ALLOWANCE_MODULES: AllowanceModuleDeployment[] = [
 
 export const STANDARD_ALLOWANCE_MODULE = ALLOWANCE_MODULES.find((m) => m.standard)!
 
+/** Allowance Module versions deployed on a given chain. */
+export function allowanceModulesOn(chainId: number): AllowanceModuleDeployment[] {
+  return ALLOWANCE_MODULES.filter((m) => !m.missingOn?.includes(chainId))
+}
+
 export function allowanceModuleByAddress(address: string): AllowanceModuleDeployment | undefined {
   return ALLOWANCE_MODULES.find((m) => m.address.toLowerCase() === address.toLowerCase())
 }
 
-/** Canonical MultiSendCallOnly v1.4.1 (verified deployed on Ethereum, Base and Gnosis). */
+/** Canonical MultiSendCallOnly v1.4.1 (deployed on every supported chain; see test/chains.verify.test.ts). */
 export const MULTI_SEND_CALL_ONLY: Address = '0x9641d764fc13c8B624c04430C7356C1C7C8102e2'
 
 export const SENTINEL: Address = '0x0000000000000000000000000000000000000001'

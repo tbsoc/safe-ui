@@ -1,5 +1,5 @@
 import type { Address, Chain } from 'viem'
-import { base, gnosis, mainnet } from 'viem/chains'
+import { base, celo, gnosis, mainnet, optimism } from 'viem/chains'
 
 export interface TokenInfo {
   address: Address
@@ -11,6 +11,8 @@ export interface ChainConfig {
   id: number
   /** EIP-3770 short name, the same prefix Safe{Wallet} uses in `?safe=base:0x…` */
   shortName: string
+  /** Other prefixes people type or paste (e.g. "op" for Optimism). */
+  aliases?: string[]
   name: string
   chain: Chain
   nativeSymbol: string
@@ -29,6 +31,7 @@ export const CHAINS: ChainConfig[] = [
   {
     id: 1,
     shortName: 'eth',
+    aliases: ['mainnet', 'ethereum'],
     name: 'Ethereum',
     chain: mainnet,
     nativeSymbol: 'ETH',
@@ -61,6 +64,7 @@ export const CHAINS: ChainConfig[] = [
   {
     id: 100,
     shortName: 'gno',
+    aliases: ['gnosis', 'xdai'],
     name: 'Gnosis',
     chain: gnosis,
     nativeSymbol: 'xDAI',
@@ -78,6 +82,43 @@ export const CHAINS: ChainConfig[] = [
       { address: '0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1', symbol: 'WETH', decimals: 18 },
     ],
   },
+  {
+    id: 10,
+    shortName: 'oeth',
+    aliases: ['op', 'optimism'],
+    name: 'Optimism',
+    chain: optimism,
+    nativeSymbol: 'ETH',
+    rpcs: ['https://optimism-rpc.publicnode.com', 'https://mainnet.optimism.io', 'https://optimism.drpc.org', 'https://1rpc.io/op'],
+    explorer: 'https://optimistic.etherscan.io',
+    blockscout: 'https://optimism.blockscout.com',
+    tokens: [
+      { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', symbol: 'USDC', decimals: 6 },
+      { address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', symbol: 'USDC.e', decimals: 6 },
+      { address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', symbol: 'USDT', decimals: 6 },
+      { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18 },
+      { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18 },
+      { address: '0x4200000000000000000000000000000000000042', symbol: 'OP', decimals: 18 },
+    ],
+  },
+  {
+    id: 42220,
+    shortName: 'celo',
+    name: 'Celo',
+    chain: celo,
+    // CELO is both the native token and an ERC-20 at 0x471E…a438; the app treats it as native only.
+    nativeSymbol: 'CELO',
+    rpcs: ['https://forno.celo.org', 'https://celo-rpc.publicnode.com', 'https://celo.drpc.org', 'https://1rpc.io/celo'],
+    explorer: 'https://celoscan.io',
+    blockscout: 'https://celo.blockscout.com',
+    tokens: [
+      { address: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', symbol: 'USDC', decimals: 6 },
+      { address: '0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e', symbol: 'USDT', decimals: 6 },
+      { address: '0x765DE816845861e75A25fCA122bb6898B8B1282a', symbol: 'USDm', decimals: 18 },
+      { address: '0xD8763CBa276a3738E6DE85b4b3bF5FDed6D6cA73', symbol: 'EURm', decimals: 18 },
+      { address: '0xe8537a3d056DA446677B9E9d6c5dB704EaAb4787', symbol: 'BRLm', decimals: 18 },
+    ],
+  },
 ]
 
 export function chainById(id: number): ChainConfig | undefined {
@@ -85,7 +126,8 @@ export function chainById(id: number): ChainConfig | undefined {
 }
 
 export function chainByShortName(shortName: string): ChainConfig | undefined {
-  return CHAINS.find((c) => c.shortName === shortName.toLowerCase())
+  const n = shortName.toLowerCase()
+  return CHAINS.find((c) => c.shortName === n || c.aliases?.includes(n))
 }
 
 export function nativeToken(chain: ChainConfig): TokenInfo {

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
-import { ALLOWANCE_MODULES, allowanceModuleByAddress } from '../lib/constants'
+import { allowanceModuleByAddress, allowanceModulesOn } from '../lib/constants'
 import { explorerTx } from '../lib/chains'
 import { errorMessage, formatAmount, formatDateTime } from '../lib/format'
 import { loadHistory, type HistoryEvent } from '../lib/history'
@@ -34,7 +34,7 @@ const LABELS: Record<string, string> = {
 export function History() {
   const { chain, info } = useSafe()
   // Include every known allowance module, so history survives a module switch.
-  const modules = ALLOWANCE_MODULES.map((m) => m.address as Address)
+  const modules = allowanceModulesOn(chain.id).map((m) => m.address as Address)
   const q = useQuery({
     queryKey: ['history', chain.id, info.address, info.nonce.toString()],
     queryFn: async () => {

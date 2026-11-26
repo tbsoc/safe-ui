@@ -1,6 +1,6 @@
 # Bread Safe
 
-A small, open-source interface for Bread Cooperative's [Safe](https://safe.global) multisigs on **Ethereum, Base and Gnosis**, with full support for the Safe **Allowance Module** (spending limits).
+A small, open-source interface for Bread Cooperative's [Safe](https://safe.global) multisigs on **Ethereum, Base, Gnosis, Optimism and Celo**, with full support for the Safe **Allowance Module** (spending limits).
 
 Safe{Wallet} now requires a paid plan to add new spending limits. The limits themselves live in a public smart contract, so this app talks to that contract directly.
 
@@ -27,7 +27,7 @@ The [Allowance Module](https://github.com/safe-global/safe-modules/tree/main/mod
 - **Members** spend up to that amount on their own, without collecting signatures, by calling the module from their wallet.
 - The allowance refills every period (daily, weekly, every 30 days…) or never (one-time).
 
-This app uses **Allowance Module v1.0.0** (`0x691f59471Bfd2B7d639DCF74671a2d648ED1E331`, same address on all three chains) for new setups. It fixes a nonce overflow and the handling of tokens that return `false`. If a Safe already has a legacy version enabled (`0.1.0` at `0xCFbF…3134` or `0.1.1` at `0xAA46…091C`), the app detects it and keeps using it. A Safe can have more than one enabled (the Bread core team Safe on Gnosis has both): the app lists allowances from all of them, sends every change to the module the allowance lives on, and defaults new allowances to the newest enabled one.
+This app uses **Allowance Module v1.0.0** (`0x691f59471Bfd2B7d639DCF74671a2d648ED1E331`, same address on all five chains) for new setups. It fixes a nonce overflow and the handling of tokens that return `false`. If a Safe already has a legacy version enabled (`0.1.0` at `0xCFbF…3134` or `0.1.1` at `0xAA46…091C`; v0.1.1 was never deployed on Celo), the app detects it and keeps using it. A Safe can have more than one enabled (the Bread core team Safe on Gnosis has both): the app lists allowances from all of them, sends every change to the module the allowance lives on, and defaults new allowances to the newest enabled one.
 
 Limits of the contract worth knowing:
 
@@ -60,7 +60,19 @@ Optional build-time settings (Vercel/Netlify environment variables):
 | Variable | Purpose |
 | --- | --- |
 | `VITE_WC_PROJECT_ID` | Enables WalletConnect (mobile wallets). Free project ID from [Reown](https://cloud.reown.com). Without it, only browser-extension wallets connect. |
-| `VITE_RPC_URL_1`, `VITE_RPC_URL_8453`, `VITE_RPC_URL_100` | Replace the default public RPCs for Ethereum, Base, Gnosis. |
+| `VITE_RPC_URL_1`, `VITE_RPC_URL_8453`, `VITE_RPC_URL_100`, `VITE_RPC_URL_10`, `VITE_RPC_URL_42220` | Replace the default public RPCs for Ethereum, Base, Gnosis, Optimism, Celo. |
+
+### Supported chains
+
+| Chain | Prefix in links | Native token | Allowance Module versions deployed |
+| --- | --- | --- | --- |
+| Ethereum | `eth:` | ETH | 1.0.0, 0.1.1, 0.1.0 |
+| Base | `base:` | ETH | 1.0.0, 0.1.1, 0.1.0 |
+| Gnosis | `gno:` | xDAI | 1.0.0, 0.1.1, 0.1.0 |
+| Optimism | `oeth:` (or `op:`) | ETH | 1.0.0, 0.1.1, 0.1.0 |
+| Celo | `celo:` | CELO | 1.0.0, 0.1.0 |
+
+`npm run verify:chains` checks all of this against the live chains: every RPC answers with the right chain id, every listed token matches its on-chain symbol and decimals, each module version is deployed exactly where the config says, and the MultiSend batching contract exists. Run it after editing `src/lib/chains.ts` or `src/lib/constants.ts`.
 
 ### Fork tests
 
@@ -70,6 +82,7 @@ These run the real Bread Safes and modules on a local copy of the chain. They ad
 | --- | --- | --- |
 | Base (default) | `0x6406…102A`, fresh, no modules | First allowance enables v1.0.0 in one transaction |
 | Gnosis (`FORK_CHAIN=gno`) | `0x918d…99ad`, core team, v0.1.0 + v0.1.1 enabled | Reads both modules, edits go to the right one, no third module added |
+| Ethereum / Optimism / Celo (`FORK_CHAIN=eth\|oeth\|celo`) | any Safe, given as `FORK_SAFE=0x…` | Browser flow only. Celo uses a native CELO allowance |
 
 ```bash
 npm run fork                    # terminal 1: local Base fork on :8545
@@ -81,6 +94,10 @@ npm run e2e:fork                # browser test: owners sign + execute via share 
 FORK_CHAIN=gno npm run fork
 FORK_CHAIN=gno npm run test:fork
 FORK_CHAIN=gno npm run e2e:fork
+
+# Ethereum, Optimism, Celo (no Bread Safe there yet, so point it at any Safe):
+FORK_CHAIN=oeth npm run fork
+FORK_CHAIN=oeth FORK_SAFE=0x… npm run e2e:fork
 ```
 
 ## Deploying

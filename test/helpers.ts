@@ -27,7 +27,7 @@ export function forkHelpers(chain: Chain, rpc: string, safe: Address) {
   async function sendAs(from: Address, to: Address, data: Hex, value = 0n) {
     // Top up gas money for the impersonated sender (fork only).
     const bal = await client().getBalance({ address: from })
-    if (bal < 10n ** 18n) await test.setBalance({ address: from, value: bal + 10n ** 18n })
+    if (bal < 100n * 10n ** 18n) await test.setBalance({ address: from, value: bal + 100n * 10n ** 18n })
     await test.impersonateAccount({ address: from })
     const hash = await test.request({ method: 'eth_sendTransaction', params: [{ from, to, data, value: `0x${value.toString(16)}` }] } as never)
     const receipt = await client().waitForTransactionReceipt({ hash: hash as Hex })
