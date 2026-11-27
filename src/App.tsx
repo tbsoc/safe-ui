@@ -30,7 +30,6 @@ const KNOWN_SAFES = [
   { name: 'Bread Coop core team treasury (Gnosis)', ref: 'gno:0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad' },
   { name: 'love.fund (Ethereum)', ref: 'eth:0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A' },
   { name: 'Test Safe (Gnosis)', ref: 'gno:0xFFf763aa566CFbd1622B6e8A056e519E0DeC8bCa' },
-  { name: 'Test Safe (Base)', ref: 'base:0xFFf763aa566CFbd1622B6e8A056e519E0DeC8bCa' },
 ]
 
 interface SafeRef {
