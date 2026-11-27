@@ -1,0 +1,13 @@
+// Cloudflare Workers config (Workers Builds: build command `npm run build`, deploy command `npx wrangler deploy`).
+// "name" must match the Worker's name in the Cloudflare dashboard.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "safe-ui",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-11-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true }
+}

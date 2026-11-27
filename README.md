@@ -126,9 +126,17 @@ FORK_CHAIN=oeth npm run e2e:fork
 
 ## Deploying
 
-**Cloudflare Pages (free, recommended):** Workers & Pages, Create, Pages, Connect to Git, pick `tbsoc/safe-ui`. Build command `npm run build`, output directory `dist`, and add the environment variable `NODE_VERSION` = `22`. Then add `SAFE_API_KEY` (Secret) and `ALLOWED_SAFES` as above and redeploy. Cloudflare picks up the `functions/` folder automatically. Security headers come from `public/_headers`. The app routes with query strings, so no redirect rules are needed.
+**Cloudflare Workers (free, recommended):** Cloudflare now creates a Worker when you import a repo. `wrangler.jsonc` and `worker/index.ts` set it up to serve the app and the shared-queue proxy.
 
-Vercel and Netlify serve the static app but not the Cloudflare function, so the shared queue is off there (share links still work).
+1. Workers & Pages, Create, import `tbsoc/safe-ui`. Build command `npm run build`, deploy command `npx wrangler deploy`.
+2. The Worker's name must match `"name"` in `wrangler.jsonc` (`safe-ui`). If yours is different, change one of them.
+3. After the first deploy, open the Worker's Settings → Variables and Secrets and add `SAFE_API_KEY` (Secret) and `ALLOWED_SAFES` as above. They apply right away.
+
+Security headers come from `public/_headers`. The app routes with query strings, so no redirect rules are needed.
+
+**Cloudflare Pages** also works: build command `npm run build`, output `dist`, `NODE_VERSION` = `22`, same two settings. Pages uses the `functions/` folder instead of `worker/`.
+
+Vercel and Netlify serve the static app but not the Cloudflare Worker/function, so the shared queue is off there (share links still work).
 
 **Vercel:** New Project, import `tbsoc/safe-ui`. The included `vercel.json` sets everything; no settings to change.
 
