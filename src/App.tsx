@@ -171,7 +171,7 @@ export default function App() {
         </main>
       )}
       <footer className="footer muted small">
-        Reads the chain directly. No backend, no tracking.{' '}
+        Reads the chain directly. Pending transactions are shared through Safe&apos;s queue. No tracking.{' '}
         <a href="https://github.com/tbsoc/safe-ui" target="_blank" rel="noreferrer">
           Source
         </a>

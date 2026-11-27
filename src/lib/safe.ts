@@ -2,6 +2,7 @@ import {
   concat,
   encodeFunctionData,
   getAddress,
+  hashMessage,
   hashTypedData,
   isAddressEqual,
   pad,
@@ -164,16 +165,28 @@ export async function fetchSafeTxHash(chainId: number, safe: Address, tx: SafeTx
 }
 
 /** Some wallets/hardware return v as 0/1; the Safe expects 27/28 for plain ECDSA signatures. */
+/**
+ * Accepts the two owner-signature formats the Safe verifies with ecrecover:
+ * - EIP-712 signatures, v = 27/28 (some wallets return 0/1, normalized here)
+ * - eth_sign signatures over the hash, v = 31/32 (used by Safe{Wallet} for some wallets)
+ */
 export function normalizeSignature(signature: Hex): Hex {
   if (signature.length !== 132) throw new Error('Expected a 65-byte signature')
   const v = parseInt(signature.slice(130), 16)
   if (v === 0 || v === 1) return (signature.slice(0, 130) + toHex(v + 27).slice(2)) as Hex
-  if (v !== 27 && v !== 28) throw new Error(`Unsupported signature v=${v}`)
+  if (v !== 27 && v !== 28 && v !== 31 && v !== 32) throw new Error(`Unsupported signature v=${v}`)
   return signature
 }
 
 export async function recoverSigner(safeTxHash: Hex, signature: Hex): Promise<Address> {
-  return getAddress(await recoverAddress({ hash: safeTxHash, signature: normalizeSignature(signature) }))
+  const sig = normalizeSignature(signature)
+  const v = parseInt(sig.slice(130), 16)
+  if (v > 30) {
+    // eth_sign: the owner signed "\x19Ethereum Signed Message:\n32" + hash; the Safe expects v + 4.
+    const inner = (sig.slice(0, 130) + toHex(v - 4).slice(2)) as Hex
+    return getAddress(await recoverAddress({ hash: hashMessage({ raw: safeTxHash }), signature: inner }))
+  }
+  return getAddress(await recoverAddress({ hash: safeTxHash, signature: sig }))
 }
 
 /** Signature that tells the Safe "this owner approved on-chain, or is the one executing". */

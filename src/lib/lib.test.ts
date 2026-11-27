@@ -70,7 +70,14 @@ describe('signatures', () => {
     const v = parseInt(sig.slice(130), 16)
     const low = (sig.slice(0, 130) + (v - 27).toString(16).padStart(2, '0')) as Hex
     expect(normalizeSignature(low)).toBe(sig)
-    expect(() => normalizeSignature((sig.slice(0, 130) + '1f') as Hex)).toThrow()
+    expect(() => normalizeSignature((sig.slice(0, 130) + '1d') as Hex)).toThrow()
+  })
+
+  it('accepts eth_sign signatures (v + 4) the way the Safe does', async () => {
+    const raw = await accounts[2].signMessage({ message: { raw: hash } })
+    const v = parseInt(raw.slice(130), 16)
+    const safeStyle = (raw.slice(0, 130) + (v + 4).toString(16)) as Hex
+    expect(await recoverSigner(hash, safeStyle)).toBe(owners[2])
   })
 
   it('packs signatures sorted by signer address', () => {

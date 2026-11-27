@@ -28,3 +28,7 @@ dist-fork
 cache
 artifacts
 .env
+
+# Cloudflare local secrets
+.dev.vars
+.wrangler

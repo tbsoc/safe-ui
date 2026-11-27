@@ -6,6 +6,10 @@
  *
  * Ethereum, Optimism, Celo: FORK_CHAIN=eth|oeth|celo FORK_SAFE=0x… (any Safe; only the fork is touched)
  *
+ * Shared-queue mode (E2E_SHARED=1, npm run e2e:fork:shared): the site is served by `vite preview`, so
+ * the real /api/safe-queue proxy runs, pointed at a local stand-in for Safe's Queue Service. Owners then
+ * open the plain Safe page, never a link, and see each other's signatures through the shared queue.
+ *
  * Test keys are added as extra owners of the Bread Safe (on the fork only), as many as the
  * threshold. Owner 1 creates an allowance in the UI and signs, the others open the share link one
  * after another and sign, the last one executes. Then the member spends from the allowance.
@@ -14,7 +18,7 @@ import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, join, resolve } from 'node:path'
-import { createTestClient, createPublicClient, createWalletClient, encodeFunctionData, http, parseAbi, parseEther } from 'viem'
+import { createTestClient, createPublicClient, createWalletClient, encodeFunctionData, getAddress, hashTypedData, http, parseAbi, parseEther, recoverAddress } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base, celo, gnosis, mainnet, optimism } from 'viem/chains'
 
@@ -69,6 +73,7 @@ const RPC = 'http://127.0.0.1:8545'
 const SAFE = cfg.safe
 const TOKEN = cfg.token.address
 const RECIPIENT = '0x000000000000000000000000000000000000bEEF'
+const SHARED = process.env.E2E_SHARED === '1'
 const distDir = resolve(process.argv[2] ?? 'dist-fork')
 const shots = process.argv[3] ? resolve(process.argv[3]) : undefined
 
@@ -218,10 +223,97 @@ async function copyShareLink(page) {
   return page.evaluate(() => navigator.clipboard.readText())
 }
 
+/** Minimal stand-in for Safe's Queue Service: same paths and fields, signatures recovered and checked. */
+function mockQueueService() {
+  const txs = new Map()
+  const TYPES = {
+    SafeTx: [
+      { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'data', type: 'bytes' },
+      { name: 'operation', type: 'uint8' }, { name: 'safeTxGas', type: 'uint256' }, { name: 'baseGas', type: 'uint256' },
+      { name: 'gasPrice', type: 'uint256' }, { name: 'gasToken', type: 'address' }, { name: 'refundReceiver', type: 'address' },
+      { name: 'nonce', type: 'uint256' },
+    ],
+  }
+  const send = (res, status, body) => {
+    res.writeHead(status, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(body))
+  }
+  const owners = async (safe) => (await pub.readContract({ address: safe, abi: safeAbi, functionName: 'getOwners' })).map((o) => o.toLowerCase())
+  const confirmation = async (hash, sig, safe) => {
+    const owner = await recoverAddress({ hash, signature: sig })
+    if (!(await owners(safe)).includes(owner.toLowerCase())) throw new Error('Signer is not a Safe owner')
+    return { owner: getAddress(owner), signature: sig, signatureType: 'EOA' }
+  }
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://x')
+    const chunks = []
+    for await (const c of req) chunks.push(c)
+    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined
+    try {
+      if (req.method === 'GET' && url.pathname === '/api/v1/multisig-transactions/queue') {
+        const [safe, chainId] = url.searchParams.get('safes').split(':')
+        const nonce = await pub.readContract({ address: safe, abi: parseAbi(['function nonce() view returns (uint256)']), functionName: 'nonce' })
+        const results = [...txs.values()].filter((t) => t.safe.toLowerCase() === safe.toLowerCase() && t.chainId === Number(chainId) && BigInt(t.nonce) >= nonce)
+        return send(res, 200, { count: results.length, next: null, previous: null, results })
+      }
+      const m = url.pathname.match(/^\/api\/v1\/multisig-transactions(?:\/(0x[0-9a-fA-F]{64}))?(\/signatures)?$/)
+      if (!m) return send(res, 404, { detail: 'Not found' })
+      const [, hash, sigs] = m
+      if (req.method === 'GET' && hash && !sigs) return txs.has(hash) ? send(res, 200, txs.get(hash)) : send(res, 404, { detail: 'MultisigTransaction not found.' })
+      if (req.method === 'POST' && !hash) {
+        const t = { ...body, chainId: Number(body.chainId), nonce: String(body.nonce), txHash: null }
+        const safeTxHash = hashTypedData({
+          domain: { chainId: t.chainId, verifyingContract: t.safe },
+          types: TYPES,
+          primaryType: 'SafeTx',
+          message: { ...t, value: BigInt(t.value), safeTxGas: BigInt(t.safeTxGas), baseGas: BigInt(t.baseGas), gasPrice: BigInt(t.gasPrice), nonce: BigInt(t.nonce) },
+        })
+        if (txs.has(safeTxHash)) return send(res, 409, { detail: 'Already exists' })
+        const confirmations = []
+        for (const s of body.signatures) confirmations.push(await confirmation(safeTxHash, s, t.safe))
+        const { signatures: _s, ...rest } = t
+        const stored = { ...rest, safeTxHash, confirmations }
+        txs.set(safeTxHash, stored)
+        return send(res, 201, stored)
+      }
+      if (req.method === 'POST' && hash && sigs) {
+        const t = txs.get(hash)
+        if (!t) return send(res, 404, { detail: 'MultisigTransaction not found.' })
+        const added = []
+        for (const s of body.signatures) {
+          const c = await confirmation(hash, s, t.safe)
+          if (t.confirmations.some((x) => x.owner === c.owner)) return send(res, 409, { detail: 'Already confirmed' })
+          added.push(c)
+        }
+        t.confirmations.push(...added)
+        return send(res, 201, added)
+      }
+      return send(res, 404, { detail: 'Not found' })
+    } catch (e) {
+      return send(res, 422, { detail: e.message })
+    }
+  })
+  return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ server, txs, url: `http://127.0.0.1:${server.address().port}` })))
+}
+
 async function main() {
   await setupFork()
-  const server = await serve(distDir)
-  const origin = `http://127.0.0.1:${server.address().port}`
+  let server
+  let origin
+  let mock
+  if (SHARED) {
+    // Serve with `vite preview` so the real /api/safe-queue proxy (vite.config.ts) handles the calls.
+    mock = await mockQueueService()
+    process.env.SAFE_API_KEY = 'test-key'
+    process.env.SAFE_QUEUE_UPSTREAM = mock.url
+    const { preview } = await import('vite')
+    const pv = await preview({ build: { outDir: distDir }, preview: { port: 4174, host: '127.0.0.1', strictPort: false }, logLevel: 'error' })
+    origin = pv.resolvedUrls.local[0].replace(/\/$/, '')
+    server = { close: () => (pv.close(), mock.server.close()) }
+  } else {
+    server = await serve(distDir)
+    origin = `http://127.0.0.1:${server.address().port}`
+  }
   const browser = await chromium.launch()
   const sym = cfg.token.symbol
   try {
@@ -253,11 +345,12 @@ async function main() {
     await p1.getByText(`Confirmations 0/${threshold}`).waitFor()
     assert(await p1.getByText(`Allowance Module v${expectModule.version} · setAllowance`).isVisible(), `queue decodes setAllowance on v${expectModule.version}`)
 
-    // Each owner signs and passes the link on; the last one executes.
+    // Each owner signs; the last one executes. Link mode passes the newest link on.
+    // Shared mode: every owner just opens the Safe's queue page and finds the transaction there.
     let page = p1
     for (let i = 1; i <= threshold; i++) {
       if (i > 1) {
-        const link = await copyShareLink(page)
+        const link = SHARED ? `${origin}/?safe=${cfg.short}:${SAFE}&tab=queue` : await copyShareLink(page)
         page = await walletPage(browser, `owner${i}`)
         await page.goto(link)
         await page.getByText(`Confirmations ${i - 1}/${threshold}`).waitFor({ timeout: 60_000 })
@@ -265,9 +358,16 @@ async function main() {
       }
       await page.getByRole('button', { name: 'Sign', exact: true }).click()
       await page.getByText(`Confirmations ${i}/${threshold}`).waitFor()
+      if (SHARED) await page.getByText('Saved to the shared queue').waitFor({ timeout: 30_000 })
     }
-    assert(true, `${threshold} owners signed via share links`)
+    if (SHARED) {
+      const stored = [...mock.txs.values()]
+      assert(stored.length === 1 && stored[0].confirmations.length === threshold, `shared queue holds the transaction with all ${threshold} signatures`)
+      assert(await page.getByText('in shared queue').isVisible(), 'card shows it is in the shared queue')
+    }
+    assert(true, `${threshold} owners signed via ${SHARED ? 'the shared queue (no links)' : 'share links'}`)
     await shot(page, 'queue-ready')
+    if (SHARED) await shot(page, 'shared-queue-ready')
     await page.getByRole('button', { name: 'Execute' }).click()
     await page.getByText('View execution on explorer').waitFor({ timeout: 60_000 })
     await shot(page, 'executed')

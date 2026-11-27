@@ -36,20 +36,33 @@ Limits of the contract worth knowing:
 - Changing an amount does not clear what was already spent this period. Use "Reset spent" for that.
 - Members must be regular wallets, or a Safe that calls the module itself. Smart-contract signatures are not accepted.
 
-## How multisig signing works without a backend
+## How multisig signing works
 
 1. Someone creates a transaction (Send or Allowances). It is checked against the Safe's own `getTransactionHash` before it is saved.
-2. Each owner signs it for free in their wallet (EIP-712). Owners whose wallet cannot sign typed data, or that are themselves Safes, can **Approve on-chain** instead.
-3. The transaction and its signatures travel in a **share link** (the part after `#`, which browsers never send to a server). Every owner who opens it merges the signatures into their browser's queue.
+2. Each owner signs it for free in their wallet (EIP-712). Owners whose wallet cannot sign typed data can **Approve on-chain** instead.
+3. Signatures are collected in the **shared queue**: Safe's own [Queue Service](https://docs.safe.global/core-api/safe-queue-service-overview), the same queue Safe{Wallet} uses. Signing saves your signature there; every signer's Queue tab picks it up within 30 seconds. Transactions created in Safe{Wallet} show up here too, and the other way round.
 4. Once enough owners have confirmed, anyone can **Execute**. If an owner who has not signed executes, their execution counts as a confirmation.
 
-Share links are encoded, not encrypted. Anyone with the link can read the transaction, but nobody can change it without invalidating the signatures.
+Nothing from the shared queue is trusted blindly: every transaction is re-hashed and every signature is checked against the Safe's current signers before it is shown or counted. Signatures from Safe{Wallet} in the older eth_sign format are accepted.
+
+**Share links are the backup.** "Copy share link" packs the transaction and its signatures into the part of the URL after `#`, which browsers never send to a server. Use them if the shared queue is down or not configured. Links are encoded, not encrypted: anyone with the link can read the transaction, but nobody can change it without invalidating the signatures.
+
+### The shared queue needs a Safe API key
+
+Safe's API requires a key (free Builder plan: 50,000 requests a month, from the [developer dashboard](https://developer.safe.global)). The key must never be in the website's code, so a small server function holds it: `functions/api/safe-queue/[[path]].ts` (Cloudflare Pages Function), using `src/server/queueProxy.ts`. It forwards only the four calls the app needs: list the queue, read a transaction, propose, add signatures.
+
+| Setting (Cloudflare: Settings → Variables and Secrets) | |
+| --- | --- |
+| `SAFE_API_KEY` (type: Secret) | Required. Your Safe API key. |
+| `ALLOWED_SAFES` | Recommended. Comma-separated `chainId:0xSafe` (or `0xSafe` for every chain). Only these Safes can use the queue through your site, so nobody else can spend your API quota. |
+
+Without `SAFE_API_KEY` (or on a host without the function, like a plain static deploy), the app says the shared queue is off and falls back to share links.
 
 ## Development
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5173 (shared queue: SAFE_API_KEY=… npm run dev)
 npm run build      # outputs dist/
 npm test           # unit tests
 npm run lint
@@ -73,6 +86,16 @@ Optional build-time settings (Vercel/Netlify environment variables):
 | Celo | `celo:` | CELO | 1.0.0, 0.1.0 |
 
 `npm run verify:chains` checks all of this against the live chains: every RPC answers with the right chain id, every listed token matches its on-chain symbol and decimals, each module version is deployed exactly where the config says, and the MultiSend batching contract exists. Run it after editing `src/lib/chains.ts` or `src/lib/constants.ts`.
+
+### Shared-queue tests
+
+```bash
+npm test                              # includes proxy + queue client unit tests
+SAFE_API_KEY=… npm run test:queue     # live: reads real core team transactions through the proxy, checks hashes and signatures,
+                                      # and confirms Safe refuses a proposal signed by a non-owner (nothing is stored)
+FORK_CHAIN=gno npm run fork           # then:
+FORK_CHAIN=gno npm run e2e:fork:shared  # browser: 5 owners sign with no links, via the real proxy and a local stand-in for Safe's service
+```
 
 ### Fork tests
 
@@ -103,7 +126,9 @@ FORK_CHAIN=oeth npm run e2e:fork
 
 ## Deploying
 
-**Cloudflare Pages (free):** Workers & Pages, Create, Pages, Connect to Git, pick `tbsoc/safe-ui`. Build command `npm run build`, output directory `dist`, and add the environment variable `NODE_VERSION` = `22`. Security headers come from `public/_headers`. The app routes with query strings, so no redirect rules are needed.
+**Cloudflare Pages (free, recommended):** Workers & Pages, Create, Pages, Connect to Git, pick `tbsoc/safe-ui`. Build command `npm run build`, output directory `dist`, and add the environment variable `NODE_VERSION` = `22`. Then add `SAFE_API_KEY` (Secret) and `ALLOWED_SAFES` as above and redeploy. Cloudflare picks up the `functions/` folder automatically. Security headers come from `public/_headers`. The app routes with query strings, so no redirect rules are needed.
+
+Vercel and Netlify serve the static app but not the Cloudflare function, so the shared queue is off there (share links still work).
 
 **Vercel:** New Project, import `tbsoc/safe-ui`. The included `vercel.json` sets everything; no settings to change.
 
