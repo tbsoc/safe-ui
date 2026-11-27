@@ -12,7 +12,7 @@ Safe{Wallet} now requires a paid plan to add new spending limits. The limits the
 
 | Tab | What you can do |
 | --- | --- |
-| Overview | Balances, signers and threshold, nonce, enabled modules |
+| Overview | Balances, signers and threshold, nonce, enabled modules. The header lists the same address on other chains with each one's threshold |
 | Send | Propose a native-token or ERC-20 transfer |
 | Allowances | Owners: set, edit, reset, delete allowances and remove members. Members: spend from their allowance |
 | Queue | Sign, approve on-chain, execute, share links with other signers |
@@ -82,7 +82,8 @@ These run the real Bread Safes and modules on a local copy of the chain. They ad
 | --- | --- | --- |
 | Base (default) | `0x6406…102A`, fresh, no modules | First allowance enables v1.0.0 in one transaction |
 | Gnosis (`FORK_CHAIN=gno`) | `0x918d…99ad`, core team, v0.1.0 + v0.1.1 enabled | Reads both modules, edits go to the right one, no third module added |
-| Ethereum / Optimism / Celo (`FORK_CHAIN=eth\|oeth\|celo`) | any Safe, given as `FORK_SAFE=0x…` | Browser flow only. Celo uses a native CELO allowance |
+| Ethereum (`FORK_CHAIN=eth`) | `0x6406…102A`, Bread Cooperative, fresh v1.5.0 | Browser flow, first allowance enables v1.0.0 |
+| Optimism / Celo (`FORK_CHAIN=oeth\|celo`) | `0x918d…99ad`, core team address, Safe v1.3.0 | Browser flow on v1.3.0 Safes. Celo uses a native CELO allowance |
 
 ```bash
 npm run fork                    # terminal 1: local Base fork on :8545
@@ -95,9 +96,9 @@ FORK_CHAIN=gno npm run fork
 FORK_CHAIN=gno npm run test:fork
 FORK_CHAIN=gno npm run e2e:fork
 
-# Ethereum, Optimism, Celo (no Bread Safe there yet, so point it at any Safe):
+# Ethereum, Optimism, Celo the same way; FORK_SAFE=0x… tests another Safe:
 FORK_CHAIN=oeth npm run fork
-FORK_CHAIN=oeth FORK_SAFE=0x… npm run e2e:fork
+FORK_CHAIN=oeth npm run e2e:fork
 ```
 
 ## Deploying

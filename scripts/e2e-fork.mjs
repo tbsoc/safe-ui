@@ -36,10 +36,25 @@ const CHAINS = {
     safe: '0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad', // Bread Coop core team (holds BREAD already)
     token: { address: '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3', symbol: 'BREAD' },
   },
-  // No Bread Safe on these yet: pass any Safe address with FORK_SAFE=0x… (only the local fork is touched).
-  eth: { chain: mainnet, short: 'eth', token: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', symbol: 'WETH', fund: WETH_FUND } },
-  oeth: { chain: optimism, short: 'oeth', token: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', fund: WETH_FUND } },
-  celo: { chain: celo, short: 'celo', token: { address: NATIVE, symbol: 'CELO', fund: 'native' } },
+  // Override any default with FORK_SAFE=0x… (only the local fork is touched).
+  eth: {
+    chain: mainnet,
+    short: 'eth',
+    safe: '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A', // Bread Cooperative (v1.5.0, fresh)
+    token: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', symbol: 'WETH', fund: WETH_FUND },
+  },
+  oeth: {
+    chain: optimism,
+    short: 'oeth',
+    safe: '0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad', // core team address (v1.3.0 on Optimism)
+    token: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', fund: WETH_FUND },
+  },
+  celo: {
+    chain: celo,
+    short: 'celo',
+    safe: '0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad', // core team address (v1.3.0 on Celo)
+    token: { address: NATIVE, symbol: 'CELO', fund: 'native' },
+  },
 }
 const MODULES = [
   { address: '0x691f59471Bfd2B7d639DCF74671a2d648ED1E331', version: '1.0.0' },

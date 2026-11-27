@@ -4,6 +4,7 @@ import { Allowances } from './components/Allowances'
 import { Addr, Status } from './components/common'
 import { ConnectButton } from './components/ConnectButton'
 import { History } from './components/History'
+import { OtherChains } from './components/OtherChains'
 import { Overview } from './components/Overview'
 import { Queue, verifyIncoming } from './components/Queue'
 import { Send } from './components/Send'
@@ -28,6 +29,7 @@ const TABS: { id: Tab; label: string }[] = [
 const KNOWN_SAFES = [
   { name: 'Bread Coop core team treasury (Gnosis)', ref: 'gno:0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad' },
   { name: 'Bread Cooperative (Base)', ref: 'base:0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A' },
+  { name: 'Bread Cooperative (Ethereum)', ref: 'eth:0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A' },
 ]
 
 interface SafeRef {
@@ -138,6 +140,7 @@ export default function App() {
               </div>
             )}
           </div>
+          <OtherChains chainId={ref.chain.id} address={ref.address} onOpen={(chain) => openSafe({ chain, address: ref.address })} />
           <nav className="tabs" role="tablist">
             {TABS.map((t) => (
               <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'tab active' : 'tab'} onClick={() => setTab(t.id)}>
