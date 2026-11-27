@@ -12,7 +12,7 @@ import { Settings } from './components/Settings'
 import { CHAINS, chainByShortName, type ChainConfig } from './lib/chains'
 import { errorMessage } from './lib/format'
 import { decodePending, loadQueue, saveQueue, upsertPending } from './lib/queue'
-import { loadSafeInfo, type SafeInfo } from './lib/safe'
+import { loadSafeInfo, NotDeployedError, type SafeInfo } from './lib/safe'
 import { storage } from './lib/storage'
 import { SafeProvider, type Tab } from './state'
 
@@ -65,6 +65,7 @@ export default function App() {
   const [{ ref, tab }, setState] = useState(readUrl)
   const [info, setInfo] = useState<SafeInfo>()
   const [loadError, setLoadError] = useState<string>()
+  const [notDeployed, setNotDeployed] = useState(false)
   const [importNotice, setImportNotice] = useState<string>()
   const [importError, setImportError] = useState<string>()
   const [queueKey, setQueueKey] = useState(0)
@@ -80,6 +81,7 @@ export default function App() {
   const reload = useCallback(async () => {
     if (!ref) return
     setLoadError(undefined)
+    setNotDeployed(false)
     try {
       const i = await loadSafeInfo(ref.chain.id, ref.address)
       setInfo(i)
@@ -87,6 +89,7 @@ export default function App() {
       const key = `${ref.chain.shortName}:${ref.address}`
       storage.set('recentSafes', [key, ...recent.filter((r) => r !== key)].slice(0, 8))
     } catch (e) {
+      setNotDeployed(e instanceof NotDeployedError)
       setLoadError(errorMessage(e))
     }
   }, [ref])
@@ -152,7 +155,18 @@ export default function App() {
           <Status error={importError} notice={importNotice} />
           {loadError && (
             <div className="card">
-              <p className="status error">Could not load this Safe: {loadError}</p>
+              {notDeployed ? (
+                <>
+                  <p className="status warn">There is no Safe deployed at this address on {ref.chain.name} yet.</p>
+                  <p className="small">
+                    If you created it in Safe{'{Wallet}'}, it may not be activated on {ref.chain.name}: open it there and click{' '}
+                    <strong>Activate account</strong>. Funds already sent to this address stay there and belong to the Safe once it is
+                    activated. If it exists on another network, it is listed under &quot;Same address on&quot; above.
+                  </p>
+                </>
+              ) : (
+                <p className="status error">Could not load this Safe: {loadError}</p>
+              )}
               <button type="button" className="btn" onClick={reload}>
                 Retry
               </button>

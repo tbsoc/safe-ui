@@ -60,10 +60,17 @@ export function isSupportedSafeVersion(version: string): boolean {
   return major === 1 && minor >= 3
 }
 
+/** No contract at the address on this chain (e.g. a Safe{Wallet} Safe that was never activated here). */
+export class NotDeployedError extends Error {
+  constructor() {
+    super('No contract at this address on this chain.')
+  }
+}
+
 export async function loadSafeInfo(chainId: number, address: Address): Promise<SafeInfo> {
   const client = getClient(chainId)
   const code = await client.getCode({ address })
-  if (!code || code === '0x') throw new Error('No contract at this address on this chain.')
+  if (!code || code === '0x') throw new NotDeployedError()
   const base = { address, abi: safeAbi } as const
   const [version, owners, threshold, nonce, nativeBalance] = await Promise.all([
     client.readContract({ ...base, functionName: 'VERSION' }),
