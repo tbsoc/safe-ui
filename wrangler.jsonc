@@ -10,6 +10,9 @@
     "binding": "ASSETS"
   },
   "observability": { "enabled": true },
+  // Don't wipe variables added in the dashboard when deploying. (Secrets always survive deploys;
+  // plain-text dashboard variables would otherwise be replaced by "vars" below.)
+  "keep_vars": true,
   // Only these Safes can use the shared queue through this site (protects the Safe API quota).
   // SAFE_API_KEY is a secret: set it in the dashboard or with `npx wrangler secret put SAFE_API_KEY`.
   "vars": {
