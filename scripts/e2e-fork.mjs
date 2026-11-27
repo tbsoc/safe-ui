@@ -450,6 +450,19 @@ async function main() {
     await m.getByPlaceholder(`Amount ${sym}`).fill('0.7')
     assert(await m.getByText('That is more than your remaining allowance.').isVisible(), 'over-limit amount is rejected in the form')
 
+    // The member can also spend from the Send tab (and sees a notice on Overview).
+    await m.goto(`${origin}/?safe=${cfg.short}:${SAFE}`)
+    await m.getByText('You have an allowance on this Safe').waitFor({ timeout: 60_000 })
+    await m.getByRole('button', { name: 'Send from my allowance' }).click()
+    await m.getByPlaceholder('Recipient 0x…').fill(RECIPIENT)
+    await m.getByPlaceholder(`Amount ${sym}`).fill('0.1')
+    const before3 = await balanceOf(RECIPIENT)
+    await m.getByRole('button', { name: 'Send', exact: true }).click()
+    await m.getByText('View transaction').waitFor({ timeout: 60_000 })
+    assert((await balanceOf(RECIPIENT)) - before3 === parseEther('0.1'), 'member spent 0.1 from the Send tab')
+    await m.getByText(`0.5 ${sym}`).first().waitFor()
+    await shot(m, 'member-send-tab')
+
     if (SHARED) {
       // An owner adds a proposer; the proposer proposes a payment; owners sign it from the shared queue.
       const o1 = await walletPage(browser, 'owner1')

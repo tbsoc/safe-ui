@@ -6,6 +6,7 @@ import { loadBalances } from '../lib/tokens'
 import { useSafe } from '../state'
 import { Addr, Card } from './common'
 import { Proposers } from './Proposers'
+import { MyAllowanceNotice } from './MyAllowances'
 
 export function Overview() {
   const { chain, info, queue, setTab } = useSafe()
@@ -18,6 +19,9 @@ export function Overview() {
 
   return (
     <div className="grid">
+      <div style={{ gridColumn: '1 / -1' }}>
+        <MyAllowanceNotice />
+      </div>
       {!isSupportedSafeVersion(info.version) && (
         <p className="status error">
           This Safe runs contract version {info.version}. This app supports v1.3.0 and newer; signing may not work.

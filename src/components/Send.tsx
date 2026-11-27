@@ -8,12 +8,17 @@ import { tokenList } from '../lib/tokens'
 import { useSafe } from '../state'
 import { Card, Field, Status, TokenSelect } from './common'
 import { useIsProposer } from './Proposers'
+import { MyAllowanceSpend, useMyAllowances } from './MyAllowances'
 
 export function Send() {
   const { chain, propose, isOwner } = useSafe()
   const { address: account } = useAccount()
   const proposer = useIsProposer(account)
   const canCreate = isOwner(account) || proposer
+  const { mine } = useMyAllowances()
+  const [mode, setMode] = useState<'allowance' | 'multisig'>()
+  // Members default to their allowance; signers/proposers without one get the multisig form.
+  const effectiveMode = mode ?? (mine.length > 0 ? 'allowance' : 'multisig')
   const tokens = tokenList(chain.id)
   const [token, setToken] = useState<TokenInfo>(tokens[0])
   const [to, setTo] = useState('')
@@ -47,15 +52,39 @@ export function Send() {
     }
   }
 
+  const chooser =
+    mine.length > 0 && canCreate ? (
+      <div className="segmented" role="radiogroup" aria-label="How to send">
+        <button type="button" role="radio" aria-checked={effectiveMode === 'allowance'} className={effectiveMode === 'allowance' ? 'seg active' : 'seg'} onClick={() => setMode('allowance')}>
+          From my allowance
+          <small>no signatures needed</small>
+        </button>
+        <button type="button" role="radio" aria-checked={effectiveMode === 'multisig'} className={effectiveMode === 'multisig' ? 'seg active' : 'seg'} onClick={() => setMode('multisig')}>
+          Multisig transaction
+          <small>needs the signer threshold</small>
+        </button>
+      </div>
+    ) : null
+
+  if (mine.length > 0 && effectiveMode === 'allowance')
+    return (
+      <Card title="Send funds">
+        {chooser}
+        <p className="muted">Send from your allowance. It goes out right away from your own wallet (you pay the network fee), within the amount left.</p>
+        <MyAllowanceSpend />
+      </Card>
+    )
+
   if (!canCreate)
     return (
       <Card title="Send funds">
-        <p className="muted">Connect a signer or proposer wallet of this Safe to create a transaction.</p>
+        <p className="muted">Connect a signer or proposer wallet of this Safe to create a transaction, or a member wallet to spend an allowance.</p>
       </Card>
     )
 
   return (
     <Card title="Send funds">
+      {chooser}
       <p className="muted">
         Creates a Safe transaction that needs the signer threshold. It goes to the Queue, where signers sign and anyone executes it.
       </p>

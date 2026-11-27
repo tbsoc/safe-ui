@@ -684,3 +684,35 @@ summary {
   padding-top: 32px;
   text-align: center;
 }
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.seg {
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.seg small {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.seg.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}

@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { getAddress, isAddress, isAddressEqual, toFunctionSelector, type Address } from 'viem'
 import { useAccount, useWriteContract } from 'wagmi'
@@ -8,7 +7,6 @@ import {
   deleteAllowanceCall,
   describePeriod,
   detectAllowanceModules,
-  loadAllAllowances,
   nextResetAt,
   remaining,
   removeDelegateCall,
@@ -25,6 +23,7 @@ import { useSafe, useWalletAction } from '../state'
 import { asChainId } from '../wagmi'
 import { Addr, Card, Field, Status, TokenSelect } from './common'
 import { useIsProposer } from './Proposers'
+import { useAllowanceData } from './MyAllowances'
 
 export function Allowances() {
   const { chain, info, isOwner } = useSafe()
@@ -33,18 +32,7 @@ export function Allowances() {
   const enabled = states.filter((s) => s.enabled)
   const active = activeModule(info.modules)
 
-  const data = useQuery({
-    queryKey: ['allowances', chain.id, info.address, info.modules.join(','), info.nonce.toString()],
-    queryFn: async () => {
-      const perModule = await loadAllAllowances(chain.id, info.address, info.modules)
-      const allowances = perModule.flatMap((m) => m.allowances)
-      const uniq = [...new Set(allowances.map((a) => a.token.toLowerCase()))] as Address[]
-      const infos = await Promise.all(uniq.map((t) => fetchTokenInfo(chain.id, t)))
-      const tokens: Record<string, TokenInfo> = {}
-      uniq.forEach((t, i) => (tokens[t] = infos[i]))
-      return { perModule, allowances, tokens }
-    },
-  })
+  const data = useAllowanceData()
 
   const [editing, setEditing] = useState<Allowance>()
   const [formModule, setFormModule] = useState<Address>(active.deployment.address)
@@ -544,7 +532,7 @@ function formatAmountPlain(v: bigint, decimals: number) {
   return frac ? `${int}.${frac}` : int
 }
 
-function SpendForm(props: { allowance: Allowance; token?: TokenInfo; onDone: () => void }) {
+export function SpendForm(props: { allowance: Allowance; token?: TokenInfo; onDone: () => void }) {
   const { chain, info } = useSafe()
   const a = props.allowance
   const t = props.token ?? { symbol: '?', decimals: 18, address: a.token }
