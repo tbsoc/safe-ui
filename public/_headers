@@ -1,0 +1,5 @@
+# Security headers for Cloudflare Pages (and Netlify, which reads the same file).
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer

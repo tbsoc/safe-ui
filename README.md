@@ -103,6 +103,8 @@ FORK_CHAIN=oeth npm run e2e:fork
 
 ## Deploying
 
+**Cloudflare Pages (free):** Workers & Pages, Create, Pages, Connect to Git, pick `tbsoc/safe-ui`. Build command `npm run build`, output directory `dist`, and add the environment variable `NODE_VERSION` = `22`. Security headers come from `public/_headers`. The app routes with query strings, so no redirect rules are needed.
+
 **Vercel:** New Project, import `tbsoc/safe-ui`. The included `vercel.json` sets everything; no settings to change.
 
 **Netlify:** Add new site, import from Git, pick `tbsoc/safe-ui`. The included `netlify.toml` sets everything.
