@@ -31,7 +31,7 @@ const CHAINS = {
   base: {
     chain: base,
     short: 'base',
-    safe: '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A', // Bread Cooperative
+    safe: '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A', // love.fund
     token: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', fund: WETH_FUND },
   },
   gno: {
@@ -44,7 +44,7 @@ const CHAINS = {
   eth: {
     chain: mainnet,
     short: 'eth',
-    safe: '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A', // Bread Cooperative (v1.5.0, fresh)
+    safe: '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A', // love.fund (v1.5.0, fresh)
     token: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', symbol: 'WETH', fund: WETH_FUND },
   },
   oeth: {

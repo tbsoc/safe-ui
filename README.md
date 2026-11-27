@@ -107,9 +107,9 @@ These run the real Bread Safes and modules on a local copy of the chain. They ad
 
 | Chain | Safe | What it covers |
 | --- | --- | --- |
-| Base (default) | `0x6406…102A`, fresh, no modules | First allowance enables v1.0.0 in one transaction |
+| Base (default) | `0x6406…102A`, love.fund, fresh, no modules | First allowance enables v1.0.0 in one transaction |
 | Gnosis (`FORK_CHAIN=gno`) | `0x918d…99ad`, core team, v0.1.0 + v0.1.1 enabled | Reads both modules, edits go to the right one, no third module added |
-| Ethereum (`FORK_CHAIN=eth`) | `0x6406…102A`, Bread Cooperative, fresh v1.5.0 | Browser flow, first allowance enables v1.0.0 |
+| Ethereum (`FORK_CHAIN=eth`) | `0x6406…102A`, love.fund, fresh v1.5.0 | Browser flow, first allowance enables v1.0.0 |
 | Optimism / Celo (`FORK_CHAIN=oeth\|celo`) | `0x918d…99ad`, core team address, Safe v1.3.0 | Browser flow on v1.3.0 Safes. Celo uses a native CELO allowance |
 
 ```bash

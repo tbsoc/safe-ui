@@ -17,7 +17,7 @@ import { delegateTypedData } from '../src/lib/proposers'
 
 const KEY = process.env.SAFE_API_KEY
 const CORE = '0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad'
-const BREAD_BASE = '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A'
+const LOVE_FUND_BASE = '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A' // love.fund
 const EXECUTED = '0xc3a946edd7f24e4d32829428f7d1f960403edd70095457bb714c1d1502b41986' // core team nonce 267
 
 const proxy = (path: string, init?: RequestInit) =>
@@ -47,11 +47,11 @@ describe.runIf(!!KEY)('Safe Queue Service (live)', () => {
   it('refuses a proposal signed by a non-owner (nothing is stored)', async () => {
     const stranger = privateKeyToAccount('0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba')
     // Far-future nonce so even a wrongly accepted proposal could never be executed.
-    const tx = buildSafeTx({ to: BREAD_BASE, nonce: 999_999n })
-    const sig = await stranger.signTypedData(safeTxTypedData(8453, BREAD_BASE, tx))
+    const tx = buildSafeTx({ to: LOVE_FUND_BASE, nonce: 999_999n })
+    const sig = await stranger.signTypedData(safeTxTypedData(8453, LOVE_FUND_BASE, tx))
     const res = await proxy('api/v1/multisig-transactions', {
       method: 'POST',
-      body: JSON.stringify({ chainId: 8453, safe: BREAD_BASE, ...tx, signatures: [sig], originName: 'Bread Safe test', notes: 'test: must be rejected' }),
+      body: JSON.stringify({ chainId: 8453, safe: LOVE_FUND_BASE, ...tx, signatures: [sig], originName: 'Bread Safe test', notes: 'test: must be rejected' }),
     })
     const text = await res.text()
     console.log('non-owner proposal ->', res.status, text.slice(0, 300))

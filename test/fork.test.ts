@@ -1,6 +1,6 @@
 /**
  * End-to-end test against a local fork of Base (see scripts/fork-test.mjs), using the real
- * Bread Cooperative Safe and the real Allowance Module v1.0.0 deployment.
+ * love.fund Safe and the real Allowance Module v1.0.0 deployment.
  *
  * The fork impersonates the Safe once to add three test keys as extra owners (threshold stays 3),
  * then drives every flow through the same library code the UI uses.
@@ -93,7 +93,7 @@ beforeAll(async () => {
   info = await loadSafeInfo(8453, SAFE)
 }, 120_000)
 
-describe.runIf(RUN)('Bread Safe on a Base fork', () => {
+describe.runIf(RUN)('love.fund Safe on a Base fork', () => {
   it('reads the Safe', () => {
     expect(info.version).toBe('1.5.0')
     expect(info.threshold).toBe(3)
