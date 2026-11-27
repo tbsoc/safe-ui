@@ -361,6 +361,9 @@ async function main() {
     mock = await mockQueueService()
     process.env.SAFE_API_KEY = 'test-key'
     process.env.SAFE_QUEUE_UPSTREAM = mock.url
+    process.env.NAME_EDITORS = `${cfg.chain.id}:${SAFE}`
+    // The address book checks signers on-chain: point that lookup at the fork, where the test signers exist.
+    process.env[`VITE_RPC_URL_${cfg.chain.id}`] = RPC
     const { preview } = await import('vite')
     const pv = await preview({ build: { outDir: distDir }, preview: { port: 4174, host: '127.0.0.1', strictPort: false }, logLevel: 'error' })
     origin = pv.resolvedUrls.local[0].replace(/\/$/, '')
@@ -429,6 +432,19 @@ async function main() {
     await page.getByRole('tab', { name: 'Allowances' }).click()
     await page.locator('td', { hasText: sym }).first().waitFor()
     assert(true, 'execution confirmed and allowance tab reloads')
+
+    if (SHARED) {
+      // Shared address book: a signer names the member; everyone sees the name.
+      await page.getByRole('tab', { name: 'Settings' }).click()
+      await page.getByLabel('Address to name').fill(accts.member.address)
+      await page.getByLabel('Name', { exact: true }).fill('Alice')
+      await page.getByRole('button', { name: 'Save name' }).click()
+      await page.getByText('Saved.').waitFor({ timeout: 30_000 })
+      await shot(page, 'address-book')
+      await page.getByRole('tab', { name: 'Allowances' }).click()
+      await page.locator('td .addr-name', { hasText: 'Alice' }).first().waitFor({ timeout: 30_000 })
+      assert(true, 'signer named the member; the name shows in the allowances table')
+    }
 
     // Member spends 0.4 from the allowance.
     const m = await walletPage(browser, 'member')

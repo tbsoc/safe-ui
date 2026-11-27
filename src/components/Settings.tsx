@@ -6,6 +6,7 @@ import { getRpcOverrides, setRpcOverride } from '../lib/rpc'
 import { addCustomToken, fetchTokenInfo, getCustomTokens, removeCustomToken } from '../lib/tokens'
 import { useSafe } from '../state'
 import { Addr, Card, Field, Status } from './common'
+import { AddressBook } from './AddressBook'
 
 export function Settings() {
   const { chain } = useSafe()
@@ -44,6 +45,8 @@ export function Settings() {
 
   return (
     <div className="stack">
+      <AddressBook />
+
       <Card title={`Tokens on ${chain.name}`}>
         <p className="muted small">Added tokens appear in balances, Send and Allowances. Stored in this browser only.</p>
         <ul className="list">

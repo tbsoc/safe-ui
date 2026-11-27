@@ -2,9 +2,11 @@ import { useState, type ReactNode } from 'react'
 import { isAddressEqual, type Address } from 'viem'
 import { explorerAddress, type ChainConfig, type TokenInfo } from '../lib/chains'
 import { shortAddress } from '../lib/format'
+import { useAddressName } from '../names'
 
 export function Addr({ address, chain, label, full }: { address: string; chain?: ChainConfig; label?: string; full?: boolean }) {
   const [copied, setCopied] = useState(false)
+  const known = useAddressName(address)
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(address)
@@ -17,6 +19,7 @@ export function Addr({ address, chain, label, full }: { address: string; chain?:
   return (
     <span className="addr" title={address}>
       {label && <span className="addr-label">{label}</span>}
+      {known && !label && <span className="addr-name">{known}</span>}
       <code>{full ? address : shortAddress(address)}</code>
       <button type="button" className="icon-btn" onClick={copy} aria-label="Copy address">
         {copied ? '✓' : '⧉'}

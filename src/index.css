@@ -716,3 +716,8 @@ summary {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+
+.addr-name {
+  font-weight: 600;
+  margin-right: 2px;
+}

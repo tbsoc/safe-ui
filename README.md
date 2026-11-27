@@ -51,6 +51,12 @@ Nothing from the shared queue is trusted blindly: every transaction is re-hashed
 
 Proposers (called "delegates" in Safe's API) can put transactions in a Safe's shared queue without being signers, for example a treasurer preparing payments. They cannot sign; signers still have to reach the threshold. Signers add or remove them in the Overview tab's Proposers card by signing a free message (no transaction). A proposer can remove themselves. Proposers live in Safe's Queue Service, so Safe{Wallet} shows the same list. They apply to one Safe on one network, and need the shared queue.
 
+### Shared address book
+
+Names for addresses (members, signers, recipients) that everyone sees next to addresses across the app. Edited in **Settings → Address book**. Anyone visiting the site can read them; only current signers of the Safes in `NAME_EDITORS` (in `wrangler.jsonc`, as `chainId:0xSafe`) can add, change or remove a name, by signing a free message. The Worker checks the signature and reads the Safe's signers on-chain before saving.
+
+Names are stored in a Cloudflare KV namespace bound as `NAMES`. `wrangler.jsonc` gives no namespace id, so Cloudflare creates one on the first deploy. If your deploy refuses that, create a namespace under Storage & Databases → KV and put its id in `kv_namespaces`. Without a namespace the app simply shows no names.
+
 ### The shared queue needs a Safe API key
 
 Safe's API requires a key (free Builder plan: 50,000 requests a month, from the [developer dashboard](https://developer.safe.global)). The key must never be in the website's code, so a small server function holds it: `functions/api/safe-queue/[[path]].ts` (Cloudflare Pages Function), using `src/server/queueProxy.ts`. It forwards only the four calls the app needs: list the queue, read a transaction, propose, add signatures.
