@@ -6,7 +6,7 @@ import { NATIVE_TOKEN, type TokenInfo } from '../lib/chains'
 import { errorMessage, parseAmount } from '../lib/format'
 import { tokenList } from '../lib/tokens'
 import { useSafe } from '../state'
-import { Card, Field, Status, TokenSelect } from './common'
+import { Card, Field, MyAddressButton, Status, TokenSelect } from './common'
 import { useIsProposer } from './Proposers'
 import { MyAllowanceSpend, useMyAllowances } from './MyAllowances'
 
@@ -93,7 +93,10 @@ export function Send() {
           <TokenSelect id="send-token" tokens={tokens} value={token.address} onChange={setToken} />
         </Field>
         <Field label="Recipient" htmlFor="send-to">
-          <input id="send-to" value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x…" spellCheck={false} />
+          <div className="form inline">
+            <input id="send-to" value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x…" spellCheck={false} />
+            <MyAddressButton onPick={setTo} />
+          </div>
         </Field>
         <Field label={`Amount (${token.symbol})`} htmlFor="send-amount">
           <input id="send-amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.0" inputMode="decimal" />

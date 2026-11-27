@@ -21,7 +21,7 @@ import { getClient } from '../lib/rpc'
 import { fetchTokenInfo, tokenList } from '../lib/tokens'
 import { useSafe, useWalletAction } from '../state'
 import { asChainId } from '../wagmi'
-import { Addr, Card, Field, Status, TokenSelect } from './common'
+import { Addr, Card, Field, MyAddressButton, Status, TokenSelect } from './common'
 import { useIsProposer } from './Proposers'
 import { useAllowanceData } from './MyAllowances'
 
@@ -576,6 +576,7 @@ export function SpendForm(props: { allowance: Allowance; token?: TokenInfo; onDo
       </p>
       <div className="form inline">
         <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Recipient 0x…" spellCheck={false} aria-label="Recipient" />
+        <MyAddressButton onPick={setTo} />
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Amount ${t.symbol}`} inputMode="decimal" aria-label="Amount" />
         <button type="button" className="btn small" onClick={() => setAmount(formatAmountPlain(left, t.decimals))}>
           Max

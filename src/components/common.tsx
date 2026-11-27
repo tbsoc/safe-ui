@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { isAddressEqual, type Address } from 'viem'
 import { explorerAddress, type ChainConfig, type TokenInfo } from '../lib/chains'
 import { shortAddress } from '../lib/format'
+import { useAccount } from 'wagmi'
 import { useAddressName } from '../names'
 
 export function Addr({ address, chain, label, full }: { address: string; chain?: ChainConfig; label?: string; full?: boolean }) {
@@ -95,4 +96,20 @@ export function Field({ label, hint, children, htmlFor }: { label: string; hint?
 
 export function sameAddr(a?: string, b?: string) {
   return !!a && !!b && isAddressEqual(a as Address, b as Address)
+}
+
+/** "Me" button next to recipient fields: fills in the connected wallet's address. */
+export function MyAddressButton({ onPick }: { onPick: (address: string) => void }) {
+  const { address } = useAccount()
+  return (
+    <button
+      type="button"
+      className="btn small"
+      onClick={() => address && onPick(address)}
+      disabled={!address}
+      title={address ? `Use my address (${address})` : 'Connect a wallet to use your address'}
+    >
+      Me
+    </button>
+  )
 }
