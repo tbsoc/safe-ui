@@ -2,7 +2,7 @@
  * Server-side proxy to Safe's Queue Service (https://api.safe.global/queue).
  *
  * It runs as a Cloudflare Pages Function (functions/api/safe-queue/[[path]].ts) and in the Vite
- * dev server, so the Safe API key never reaches the browser. Only the four calls the app needs are
+ * dev server, so the Safe API key never reaches the browser. Only the calls the app needs are
  * forwarded; everything else gets a 404.
  *
  * Environment:
@@ -66,6 +66,7 @@ export async function handleQueueRequest(
   const allowed = parseAllowed(env.ALLOWED_SAFES)
   const url = new URL(request.url)
   const parts = path.replace(/^\/+|\/+$/g, '').split('/')
+  if (parts.join('/') === 'api/v1/delegates') return handleDelegates(request, env, allowed, url, fetchImpl)
   const base = parts.slice(0, 3).join('/')
   if (base !== 'api/v1/multisig-transactions') return json(404, { error: 'Not found' })
   const rest = parts.slice(3)
@@ -120,13 +121,61 @@ export async function handleQueueRequest(
     return json(404, { error: 'Not found' })
   }
 
+  return forward(env, upstreamPath, init, fetchImpl)
+}
+
+async function forward(env: QueueProxyEnv, upstreamPath: string, init: RequestInit, fetchImpl: typeof fetch): Promise<Response> {
   const res = await fetchImpl(`${env.SAFE_QUEUE_UPSTREAM || UPSTREAM}${upstreamPath}`, {
     ...init,
     headers: { authorization: `Bearer ${env.SAFE_API_KEY}`, 'content-type': 'application/json', accept: 'application/json' },
   })
   const text = await res.text()
-  return new Response(text, {
+  // 204/205/304 responses must not carry a body.
+  const bodyless = res.status === 204 || res.status === 205 || res.status === 304
+  return new Response(bodyless ? null : text, {
     status: res.status,
     headers: { 'content-type': res.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' },
   })
+}
+
+/**
+ * Proposers ("delegates"): list by Safe or by proposer address; add/remove only for allowed Safes.
+ * The Queue Service checks the owner's EIP-712 signature itself.
+ */
+async function handleDelegates(
+  request: Request,
+  env: QueueProxyEnv,
+  allowed: Allow[] | undefined,
+  url: URL,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  if (request.method === 'GET') {
+    const safe = url.searchParams.get('safe')
+    const delegate = url.searchParams.get('delegate')
+    if (safe ? !ADDRESS.test(safe) : !delegate || !ADDRESS.test(delegate)) return json(400, { error: 'Pass safe=0x… or delegate=0x…' })
+    if (safe && allowed && !allowed.some((a) => a.safe === safe.toLowerCase())) return json(403, { error: 'This Safe is not enabled on this site.' })
+    const qs = new URLSearchParams()
+    if (safe) qs.set('safe', safe)
+    if (delegate) qs.set('delegate', delegate)
+    qs.set('limit', '100')
+    return forward(env, `/api/v1/delegates?${qs}`, { method: 'GET' }, fetchImpl)
+  }
+  if (request.method !== 'POST' && request.method !== 'DELETE') return json(404, { error: 'Not found' })
+  let body: Record<string, unknown>
+  try {
+    body = (await readJson(request)) as Record<string, unknown>
+  } catch {
+    return json(400, { error: 'Invalid JSON body' })
+  }
+  const safe = String(body.safe ?? '')
+  if (!ADDRESS.test(safe)) return json(400, { error: 'safe is required' })
+  const chainId = body.chainId === null || body.chainId === undefined ? null : Number(body.chainId)
+  if (chainId !== null && !Number.isInteger(chainId)) return json(400, { error: 'chainId must be a number or null' })
+  if (allowed && !allowed.some((a) => a.safe === safe.toLowerCase() && (a.chainId === undefined || chainId === null || a.chainId === chainId)))
+    return json(403, { error: 'This Safe is not enabled on this site.' })
+  if (!ADDRESS.test(String(body.delegate)) || !ADDRESS.test(String(body.delegator)) || typeof body.signature !== 'string')
+    return json(400, { error: 'delegate, delegator and signature are required' })
+  const fields = request.method === 'POST' ? ['delegate', 'delegator', 'signature', 'chainId', 'safe', 'label'] : ['delegate', 'delegator', 'signature', 'chainId', 'safe']
+  const clean = Object.fromEntries(fields.filter((f) => body[f] !== undefined).map((f) => [f, body[f]]))
+  return forward(env, '/api/v1/delegates', { method: request.method, body: JSON.stringify(clean) }, fetchImpl)
 }

@@ -5,6 +5,7 @@ import { isSupportedSafeVersion } from '../lib/safe'
 import { loadBalances } from '../lib/tokens'
 import { useSafe } from '../state'
 import { Addr, Card } from './common'
+import { Proposers } from './Proposers'
 
 export function Overview() {
   const { chain, info, queue, setTab } = useSafe()
@@ -92,6 +93,8 @@ export function Overview() {
         </ul>
         <p className="muted small">Modules can move funds without the signer threshold. Only keep modules you recognise.</p>
       </Card>
+
+      <Proposers />
     </div>
   )
 }

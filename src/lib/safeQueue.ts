@@ -31,7 +31,7 @@ export interface RemoteTx {
   executed: boolean
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+export async function queueCall<T>(path: string, init?: RequestInit): Promise<T> {
   if (!BASE) throw new QueueUnavailableError('Shared queue disabled')
   let res: Response
   try {
@@ -47,6 +47,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     body = undefined
   }
   // No proxy on this host (static-only deploy answers with the app's HTML) or proxy not configured.
+  if (res.status === 204) return undefined as T
   const isJson = (res.headers.get('content-type') ?? '').includes('json')
   if (res.status === 503 || !isJson || (res.status === 404 && body === undefined))
     throw new QueueUnavailableError('Shared queue not configured on this site')
@@ -116,7 +117,7 @@ export function remoteToPending(r: RemoteTx): PendingTx {
 }
 
 export async function fetchRemoteQueue(chainId: number, safe: Address): Promise<RemoteTx[]> {
-  const res = await call<{ results?: Record<string, unknown>[] }>(
+  const res = await queueCall<{ results?: Record<string, unknown>[] }>(
     `/api/v1/multisig-transactions/queue?safes=${encodeURIComponent(`${safe}:${chainId}`)}`,
   )
   return (res.results ?? []).map(parseRemoteTx).filter((r): r is RemoteTx => !!r && r.chainId === chainId && !r.executed)
@@ -124,7 +125,7 @@ export async function fetchRemoteQueue(chainId: number, safe: Address): Promise<
 
 export async function fetchRemoteTx(safeTxHash: Hex): Promise<RemoteTx | undefined> {
   try {
-    const r = await call<Record<string, unknown>>(`/api/v1/multisig-transactions/${safeTxHash}`)
+    const r = await queueCall<Record<string, unknown>>(`/api/v1/multisig-transactions/${safeTxHash}`)
     return parseRemoteTx(r)
   } catch (e) {
     if ((e as { status?: number }).status === 404) return undefined
@@ -133,7 +134,7 @@ export async function fetchRemoteTx(safeTxHash: Hex): Promise<RemoteTx | undefin
 }
 
 export async function proposeRemote(p: PendingTx, signatures: Hex[]): Promise<void> {
-  await call('/api/v1/multisig-transactions', {
+  await queueCall('/api/v1/multisig-transactions', {
     method: 'POST',
     body: JSON.stringify({
       chainId: p.chainId,
@@ -149,7 +150,7 @@ export async function proposeRemote(p: PendingTx, signatures: Hex[]): Promise<vo
 }
 
 export async function addRemoteSignatures(safeTxHash: Hex, signatures: Hex[]): Promise<void> {
-  await call(`/api/v1/multisig-transactions/${safeTxHash}/signatures`, { method: 'POST', body: JSON.stringify({ signatures }) })
+  await queueCall(`/api/v1/multisig-transactions/${safeTxHash}/signatures`, { method: 'POST', body: JSON.stringify({ signatures }) })
 }
 
 /** Owners whose signature we hold locally but the shared queue does not have yet. */

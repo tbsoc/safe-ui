@@ -24,6 +24,7 @@ import { fetchTokenInfo, tokenList } from '../lib/tokens'
 import { useSafe, useWalletAction } from '../state'
 import { asChainId } from '../wagmi'
 import { Addr, Card, Field, Status, TokenSelect } from './common'
+import { useIsProposer } from './Proposers'
 
 export function Allowances() {
   const { chain, info, isOwner } = useSafe()
@@ -48,7 +49,9 @@ export function Allowances() {
   const [editing, setEditing] = useState<Allowance>()
   const [formModule, setFormModule] = useState<Address>(active.deployment.address)
   const mine = (data.data?.allowances ?? []).filter((a) => account && isAddressEqual(a.delegate, account) && a.amount > 0n)
-  const owner = isOwner(account)
+  const proposer = useIsProposer(account)
+  // Signers and proposers can create allowance transactions; only signers can sign them.
+  const owner = isOwner(account) || proposer
   const formTarget = editing?.module ?? formModule
   const formDelegates = data.data?.perModule.find((m) => isAddressEqual(m.deployment.address, formTarget))?.delegates ?? []
   const hasLegacy = enabled.some((s) => !s.deployment.standard)
@@ -416,7 +419,7 @@ function AllowanceForm(props: {
   if (!props.canManage)
     return (
       <Card title="Set an allowance">
-        <p className="muted">Connect a signer wallet of this Safe to create or change allowances.</p>
+        <p className="muted">Connect a signer or proposer wallet of this Safe to create or change allowances.</p>
       </Card>
     )
 

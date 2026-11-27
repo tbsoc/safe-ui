@@ -67,6 +67,38 @@ describe('queue proxy', () => {
     expect(parseAllowed(`${SAFE}, 8453:${other}`)).toEqual([{ safe: SAFE.toLowerCase() }, { chainId: 8453, safe: other.toLowerCase() }])
   })
 
+  it('forwards proposer (delegate) calls only for allowed Safes', async () => {
+    const f = ok()
+    const env2 = { ...env, ALLOWED_SAFES: `100:${SAFE}` }
+    const other = '0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A'
+    const body = (safe: string, extra = {}) => JSON.stringify({ delegate: other, delegator: SAFE, signature: '0x01', chainId: 100, safe, ...extra })
+    const list = await handleQueueRequest(new Request(`https://x/d?safe=${SAFE}`), env2, 'api/v1/delegates', f as unknown as typeof fetch)
+    expect(list.status).toBe(200)
+    expect((f.mock.calls[0] as unknown as [string])[0]).toBe(`https://api.safe.global/queue/api/v1/delegates?safe=${SAFE}&limit=100`)
+    const listOther = await handleQueueRequest(new Request(`https://x/d?safe=${other}`), env2, 'api/v1/delegates', f as unknown as typeof fetch)
+    expect(listOther.status).toBe(403)
+    const addOther = await handleQueueRequest(new Request('https://x/d', { method: 'POST', body: body(other) }), env2, 'api/v1/delegates', f as unknown as typeof fetch)
+    expect(addOther.status).toBe(403)
+    const add = await handleQueueRequest(new Request('https://x/d', { method: 'POST', body: body(SAFE, { label: 'T', evil: 1 }) }), env2, 'api/v1/delegates', f as unknown as typeof fetch)
+    expect(add.status).toBe(200)
+    expect(JSON.parse((f.mock.calls.at(-1) as unknown as [string, RequestInit])[1].body as string)).toEqual({
+      delegate: other, delegator: SAFE, signature: '0x01', chainId: 100, safe: SAFE, label: 'T',
+    })
+    const noSafe = await handleQueueRequest(new Request('https://x/d', { method: 'DELETE', body: JSON.stringify({ delegate: other, delegator: SAFE, signature: '0x01' }) }), env, 'api/v1/delegates', f as unknown as typeof fetch)
+    expect(noSafe.status).toBe(400)
+  })
+
+  it('passes 204 replies through without a body', async () => {
+    const f = vi.fn(async () => new Response(null, { status: 204 }))
+    const res = await handleQueueRequest(
+      new Request('https://x/d', { method: 'DELETE', body: JSON.stringify({ delegate: SAFE, delegator: SAFE, signature: '0x01', chainId: 100, safe: SAFE }) }),
+      env,
+      'api/v1/delegates',
+      f as unknown as typeof fetch,
+    )
+    expect(res.status).toBe(204)
+  })
+
   it('strips unknown fields from proposals', async () => {
     const f = ok()
     await handleQueueRequest(

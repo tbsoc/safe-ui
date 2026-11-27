@@ -18,7 +18,7 @@ import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, join, resolve } from 'node:path'
-import { createTestClient, createPublicClient, createWalletClient, encodeFunctionData, getAddress, hashTypedData, http, parseAbi, parseEther, recoverAddress } from 'viem'
+import { createTestClient, createPublicClient, createWalletClient, encodeFunctionData, getAddress, hashTypedData, http, parseAbi, parseEther, recoverAddress, recoverTypedDataAddress } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base, celo, gnosis, mainnet, optimism } from 'viem/chains'
 
@@ -84,7 +84,10 @@ const ownerKeys = [
   '0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e',
   '0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356',
 ]
-const accts = { member: privateKeyToAccount('0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a') }
+const accts = {
+  member: privateKeyToAccount('0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a'),
+  proposer: privateKeyToAccount('0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97'),
+}
 ownerKeys.forEach((k, i) => (accts[`owner${i + 1}`] = privateKeyToAccount(k)))
 
 const pub = createPublicClient({ chain: cfg.chain, transport: http(RPC) })
@@ -171,8 +174,8 @@ async function walletPage(browser, name) {
         return null
       case 'eth_signTypedData_v4': {
         const typed = typeof params[1] === 'string' ? JSON.parse(params[1]) : params[1]
-        const { EIP712Domain: _drop, ...types } = typed.types
-        return account.signTypedData({ domain: typed.domain, types, primaryType: typed.primaryType, message: typed.message })
+        // Keep EIP712Domain: Safe's Queue Service uses a non-standard domain field (safe).
+        return account.signTypedData({ domain: typed.domain, types: typed.types, primaryType: typed.primaryType, message: typed.message })
       }
       case 'eth_sendTransaction': {
         const t = params[0]
@@ -226,6 +229,27 @@ async function copyShareLink(page) {
 /** Minimal stand-in for Safe's Queue Service: same paths and fields, signatures recovered and checked. */
 function mockQueueService() {
   const txs = new Map()
+  const delegates = []
+  const DELEGATE_TYPES = {
+    EIP712Domain: [
+      { name: 'name', type: 'string' }, { name: 'version', type: 'string' }, { name: 'chainId', type: 'uint256' }, { name: 'safe', type: 'address' },
+    ],
+    Delegate: [{ name: 'delegateAddress', type: 'address' }, { name: 'totp', type: 'uint256' }, { name: 'action', type: 'string' }],
+  }
+  const delegateSigner = async (b, action) => {
+    const hour = BigInt(Math.floor(Date.now() / 3600000))
+    for (const totp of [hour, hour - 1n]) {
+      const signer = await recoverTypedDataAddress({
+        domain: { name: 'Safe Queue Service', version: '1.0', chainId: Number(b.chainId ?? 0), safe: b.safe ?? '0x0000000000000000000000000000000000000000' },
+        types: DELEGATE_TYPES,
+        primaryType: 'Delegate',
+        message: { delegateAddress: b.delegate, totp, action },
+        signature: b.signature,
+      })
+      if ([b.delegator, b.delegate].some((a) => a.toLowerCase() === signer.toLowerCase())) return signer
+    }
+    throw new Error('Invalid signature, TOTP expired, or not signed by delegator')
+  }
   const TYPES = {
     SafeTx: [
       { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'data', type: 'bytes' },
@@ -256,6 +280,27 @@ function mockQueueService() {
         const results = [...txs.values()].filter((t) => t.safe.toLowerCase() === safe.toLowerCase() && t.chainId === Number(chainId) && BigInt(t.nonce) >= nonce)
         return send(res, 200, { count: results.length, next: null, previous: null, results })
       }
+      if (url.pathname === '/api/v1/delegates') {
+        if (req.method === 'GET') {
+          const safe = url.searchParams.get('safe')?.toLowerCase()
+          const delegate = url.searchParams.get('delegate')?.toLowerCase()
+          const results = delegates.filter((d) => (!safe || d.safe?.toLowerCase() === safe) && (!delegate || d.delegate.toLowerCase() === delegate))
+          return send(res, 200, { count: results.length, next: null, previous: null, results })
+        }
+        const signer = await delegateSigner(body, req.method === 'POST' ? 'add' : 'delete')
+        if (req.method === 'POST') {
+          if (signer.toLowerCase() !== body.delegator.toLowerCase()) throw new Error('Only the delegator can add')
+          delegates.push({ delegate: body.delegate, delegator: body.delegator, safe: body.safe, chainId: body.chainId === null ? null : String(body.chainId), label: body.label ?? '' })
+          return send(res, 201, delegates.at(-1))
+        }
+        if (req.method === 'DELETE') {
+          const i = delegates.findIndex((d) => d.delegate.toLowerCase() === body.delegate.toLowerCase() && d.delegator.toLowerCase() === body.delegator.toLowerCase())
+          if (i < 0) return send(res, 404, { detail: 'Not found' })
+          delegates.splice(i, 1)
+          res.writeHead(204)
+          return res.end()
+        }
+      }
       const m = url.pathname.match(/^\/api\/v1\/multisig-transactions(?:\/(0x[0-9a-fA-F]{64}))?(\/signatures)?$/)
       if (!m) return send(res, 404, { detail: 'Not found' })
       const [, hash, sigs] = m
@@ -270,9 +315,19 @@ function mockQueueService() {
         })
         if (txs.has(safeTxHash)) return send(res, 409, { detail: 'Already exists' })
         const confirmations = []
-        for (const s of body.signatures) confirmations.push(await confirmation(safeTxHash, s, t.safe))
+        let proposedBy = null
+        const first = await recoverAddress({ hash: safeTxHash, signature: body.signatures[0] })
+        const owns = await owners(t.safe)
+        if (!owns.includes(first.toLowerCase())) {
+          // A proposer: exactly one signature, not stored as a confirmation, delegator must be an owner.
+          const ok = delegates.some((d) => d.delegate.toLowerCase() === first.toLowerCase() && owns.includes(d.delegator.toLowerCase()) && (!d.safe || d.safe.toLowerCase() === t.safe.toLowerCase()))
+          if (!ok || body.signatures.length !== 1) throw new Error('First signer is not a Safe owner, an authorized delegate or an owner of a Safe owning this Safe')
+          proposedBy = getAddress(first)
+        } else {
+          for (const s of body.signatures) confirmations.push(await confirmation(safeTxHash, s, t.safe))
+        }
         const { signatures: _s, ...rest } = t
-        const stored = { ...rest, safeTxHash, confirmations }
+        const stored = { ...rest, safeTxHash, confirmations, proposedBy }
         txs.set(safeTxHash, stored)
         return send(res, 201, stored)
       }
@@ -394,6 +449,49 @@ async function main() {
 
     await m.getByPlaceholder(`Amount ${sym}`).fill('0.7')
     assert(await m.getByText('That is more than your remaining allowance.').isVisible(), 'over-limit amount is rejected in the form')
+
+    if (SHARED) {
+      // An owner adds a proposer; the proposer proposes a payment; owners sign it from the shared queue.
+      const o1 = await walletPage(browser, 'owner1')
+      await o1.goto(`${origin}/?safe=${cfg.short}:${SAFE}`)
+      await connect(o1)
+      await o1.getByLabel('Proposer address').fill(accts.proposer.address)
+      await o1.getByLabel('Proposer name').fill('Treasurer')
+      await o1.getByRole('button', { name: 'Add proposer' }).click()
+      await o1.getByText('Proposer added.').waitFor({ timeout: 30_000 })
+      await o1.getByText('Treasurer').waitFor()
+      await shot(o1, 'proposer-added')
+      assert(true, 'owner added a proposer with a signed message')
+
+      const pr = await walletPage(browser, 'proposer')
+      await pr.goto(`${origin}/?safe=${cfg.short}:${SAFE}&tab=send`)
+      await connect(pr)
+      await pr.locator('#send-token').waitFor({ timeout: 30_000 })
+      await pr.locator('#send-token').selectOption({ label: sym })
+      await pr.locator('#send-to').fill(RECIPIENT)
+      await pr.locator('#send-amount').fill('0.1')
+      await pr.getByRole('button', { name: 'Create transaction' }).click()
+      assert(!(await pr.getByRole('button', { name: 'Sign', exact: true }).isVisible()), 'proposer gets no Sign button')
+      await pr.getByRole('button', { name: 'Propose to shared queue' }).click()
+      await pr.getByText('Proposed. It is in the shared queue').waitFor({ timeout: 30_000 })
+      await shot(pr, 'proposer-proposed')
+      const proposed = [...mock.txs.values()].find((t) => t.proposedBy)
+      assert(proposed && proposed.confirmations.length === 0, 'proposal is in the shared queue with 0 confirmations')
+
+      const before2 = await balanceOf(RECIPIENT)
+      let pg
+      for (let i = 1; i <= threshold; i++) {
+        pg = await walletPage(browser, `owner${i}`)
+        await pg.goto(`${origin}/?safe=${cfg.short}:${SAFE}&tab=queue`)
+        await pg.getByText(`Confirmations ${i - 1}/${threshold}`).waitFor({ timeout: 60_000 })
+        await connect(pg)
+        await pg.getByRole('button', { name: 'Sign', exact: true }).click()
+        await pg.getByText('Saved to the shared queue').waitFor({ timeout: 30_000 })
+      }
+      await pg.getByRole('button', { name: 'Execute' }).click()
+      await pg.getByText('View execution on explorer').waitFor({ timeout: 60_000 })
+      assert((await balanceOf(RECIPIENT)) - before2 === parseEther('0.1'), `proposer's payment executed after ${threshold} owner signatures`)
+    }
 
     console.log(`\nAll browser checks passed on ${cfg.chain.name} (module v${expectModule.version}).`)
   } catch (e) {

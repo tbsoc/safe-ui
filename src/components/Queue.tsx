@@ -10,7 +10,7 @@ import { decodePending, encodePending, extractEncoded, upsertPending, type Pendi
 import { getClient } from '../lib/rpc'
 import { tokenList } from '../lib/tokens'
 import { storage } from '../lib/storage'
-import { fetchRemoteQueue, missingRemotely, QueueUnavailableError, remoteToPending, syncToRemote, type RemoteTx } from '../lib/safeQueue'
+import { fetchRemoteQueue, missingRemotely, proposeRemote, QueueUnavailableError, remoteToPending, syncToRemote, type RemoteTx } from '../lib/safeQueue'
 import {
   computeSafeTxHash,
   execTransactionArgs,
@@ -24,6 +24,7 @@ import {
 } from '../lib/safe'
 import { useSafe, useWalletAction } from '../state'
 import { Addr, Card, Status } from './common'
+import { useIsProposer } from './Proposers'
 import { asChainId } from '../wagmi'
 
 export function shareLink(chain: ChainConfig, p: PendingTx) {
@@ -265,6 +266,16 @@ function PendingCard({
   })
   const iSigned = !!account && (!!p.signatures[account.toLowerCase()] || (approvals.data ?? []).some((a) => isAddressEqual(a, account)))
   const unsynced = sharedOn ? missingRemotely(p, remote).length : 0
+  const proposer = useIsProposer(account)
+
+  // A proposer's signature puts the transaction in the shared queue but is not a confirmation.
+  const proposeAsProposer = () =>
+    run(async (acct) => {
+      const sig = normalizeSignature(await signTypedDataAsync({ account: acct, ...safeTxTypedData(chain.id, info.address, p.tx) }))
+      if (!isAddressEqual(await recoverSigner(p.safeTxHash, sig), acct)) throw new Error('The signature does not match your address.')
+      await proposeRemote(p, [sig])
+      onShared()
+    }, 'Proposed. It is in the shared queue for the signers to sign.')
   const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string }>()
 
   /** Push every signature we hold to the shared queue. Never throws: links remain the fallback. */
@@ -343,7 +354,7 @@ function PendingCard({
           ) : Object.keys(p.signatures).length ? (
             <span className="tag warn">only in this browser</span>
           ) : (
-            <span className="tag">shared when the first signer signs</span>
+            <span className="tag">{proposer ? 'not proposed yet' : 'shared when the first signer signs'}</span>
           )}
           {unsynced > 0 && (
             <>
@@ -434,6 +445,11 @@ function PendingCard({
               Approve on-chain
             </button>
           </>
+        )}
+        {proposer && sharedOn && !remote && (
+          <button type="button" className="btn primary" onClick={proposeAsProposer} disabled={busy || !hashOk}>
+            Propose to shared queue
+          </button>
         )}
         <button type="button" className="btn primary" onClick={execute} disabled={busy || !plan.ready || !isNext || !hashOk || !account}>
           Execute

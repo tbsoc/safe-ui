@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useAccount } from 'wagmi'
 import { encodeFunctionData, getAddress, isAddress } from 'viem'
 import { erc20Abi } from '../lib/abis'
 import { NATIVE_TOKEN, type TokenInfo } from '../lib/chains'
@@ -6,9 +7,13 @@ import { errorMessage, parseAmount } from '../lib/format'
 import { tokenList } from '../lib/tokens'
 import { useSafe } from '../state'
 import { Card, Field, Status, TokenSelect } from './common'
+import { useIsProposer } from './Proposers'
 
 export function Send() {
-  const { chain, propose } = useSafe()
+  const { chain, propose, isOwner } = useSafe()
+  const { address: account } = useAccount()
+  const proposer = useIsProposer(account)
+  const canCreate = isOwner(account) || proposer
   const tokens = tokenList(chain.id)
   const [token, setToken] = useState<TokenInfo>(tokens[0])
   const [to, setTo] = useState('')
@@ -41,6 +46,13 @@ export function Send() {
       setBusy(false)
     }
   }
+
+  if (!canCreate)
+    return (
+      <Card title="Send funds">
+        <p className="muted">Connect a signer or proposer wallet of this Safe to create a transaction.</p>
+      </Card>
+    )
 
   return (
     <Card title="Send funds">

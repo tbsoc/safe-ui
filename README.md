@@ -47,6 +47,10 @@ Nothing from the shared queue is trusted blindly: every transaction is re-hashed
 
 **Share links are the backup.** "Copy share link" packs the transaction and its signatures into the part of the URL after `#`, which browsers never send to a server. Use them if the shared queue is down or not configured. Links are encoded, not encrypted: anyone with the link can read the transaction, but nobody can change it without invalidating the signatures.
 
+### Proposers
+
+Proposers (called "delegates" in Safe's API) can put transactions in a Safe's shared queue without being signers, for example a treasurer preparing payments. They cannot sign; signers still have to reach the threshold. Signers add or remove them in the Overview tab's Proposers card by signing a free message (no transaction). A proposer can remove themselves. Proposers live in Safe's Queue Service, so Safe{Wallet} shows the same list. They apply to one Safe on one network, and need the shared queue.
+
 ### The shared queue needs a Safe API key
 
 Safe's API requires a key (free Builder plan: 50,000 requests a month, from the [developer dashboard](https://developer.safe.global)). The key must never be in the website's code, so a small server function holds it: `functions/api/safe-queue/[[path]].ts` (Cloudflare Pages Function), using `src/server/queueProxy.ts`. It forwards only the four calls the app needs: list the queue, read a transaction, propose, add signatures.
@@ -54,7 +58,7 @@ Safe's API requires a key (free Builder plan: 50,000 requests a month, from the 
 | Setting (Cloudflare: Settings → Variables and Secrets) | |
 | --- | --- |
 | `SAFE_API_KEY` (type: Secret) | Required. Your Safe API key. |
-| `ALLOWED_SAFES` | Recommended. Comma-separated `chainId:0xSafe` (or `0xSafe` for every chain). Only these Safes can use the queue through your site, so nobody else can spend your API quota. |
+| `ALLOWED_SAFES` | Recommended. Comma-separated `chainId:0xSafe` (or `0xSafe` for every chain). Only these Safes can use the queue through your site, so nobody else can spend your API quota. Already set for the two Bread Safes in `wrangler.jsonc` (Workers). |
 
 Without `SAFE_API_KEY` (or on a host without the function, like a plain static deploy), the app says the shared queue is off and falls back to share links.
 
@@ -130,7 +134,7 @@ FORK_CHAIN=oeth npm run e2e:fork
 
 1. Workers & Pages, Create, import `tbsoc/safe-ui`. Build command `npm run build`, deploy command `npx wrangler deploy`.
 2. The Worker's name must match `"name"` in `wrangler.jsonc` (`safe-ui`). If yours is different, change one of them.
-3. After the first deploy, open the Worker's Settings → Variables and Secrets and add `SAFE_API_KEY` (Secret) and `ALLOWED_SAFES` as above. They apply right away.
+3. After the first deploy, open the Worker's Settings → Variables and Secrets and add `SAFE_API_KEY` (type Secret), or run `npx wrangler secret put SAFE_API_KEY` from this folder. `ALLOWED_SAFES` comes from `wrangler.jsonc`.
 
 Security headers come from `public/_headers`. The app routes with query strings, so no redirect rules are needed.
 

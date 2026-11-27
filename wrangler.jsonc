@@ -9,5 +9,10 @@
     "directory": "./dist",
     "binding": "ASSETS"
   },
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // Only these Safes can use the shared queue through this site (protects the Safe API quota).
+  // SAFE_API_KEY is a secret: set it in the dashboard or with `npx wrangler secret put SAFE_API_KEY`.
+  "vars": {
+    "ALLOWED_SAFES": "0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad,0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A"
+  }
 }
