@@ -113,3 +113,72 @@ export function MyAddressButton({ onPick }: { onPick: (address: string) => void 
     </button>
   )
 }
+
+/**
+ * Aligned list of addresses: name column, address column, then optional tags/actions.
+ * Names come from the shared address book unless `label` is given.
+ */
+export function AddressList({
+  chain,
+  rows,
+  numbered,
+}: {
+  chain: ChainConfig
+  rows: { address: string; label?: ReactNode; extra?: ReactNode }[]
+  numbered?: boolean
+}) {
+  return (
+    <ul className={numbered ? 'people numbered' : 'people'}>
+      {rows.map((r, i) => (
+        <AddressListRow key={r.address} chain={chain} index={numbered ? i + 1 : undefined} {...r} />
+      ))}
+    </ul>
+  )
+}
+
+function AddressListRow({ chain, address, label, extra, index }: { chain: ChainConfig; address: string; label?: ReactNode; extra?: ReactNode; index?: number }) {
+  const known = useAddressName(address)
+  const { address: me } = useAccount()
+  const isMe = !!me && me.toLowerCase() === address.toLowerCase()
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(address)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch {
+      /* clipboard blocked */
+    }
+  }
+  return (
+    <li className="person">
+      {index !== undefined && <span className="person-index">{index}</span>}
+      <span className="person-name" title={typeof known === 'string' && !label ? known : undefined}>
+        {label ?? (known ? <strong>{known}</strong> : <span className="muted">Unnamed</span>)}
+        {isMe && <span className="tag ok">you</span>}
+      </span>
+      <span className="person-addr" title={address}>
+        <code className="addr-full">{address}</code>
+        <code className="addr-short">{shortAddress(address)}</code>
+        <button type="button" className="icon-btn" onClick={copy} aria-label="Copy address">
+          {copied ? '✓' : '⧉'}
+        </button>
+        <a className="icon-btn" href={explorerAddress(chain, address)} target="_blank" rel="noreferrer" aria-label="Open in explorer">
+          ↗
+        </a>
+      </span>
+      {extra && <span className="person-extra">{extra}</span>}
+    </li>
+  )
+}
+
+/** Small labelled number for summary rows. */
+export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
+  return (
+    <div className="stat">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      {hint && <div className="stat-hint">{hint}</div>}
+    </div>
+  )
+}

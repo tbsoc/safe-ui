@@ -721,3 +721,143 @@ summary {
   font-weight: 600;
   margin-right: 2px;
 }
+
+/* ---- Overview ---- */
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.overview > .status {
+  margin: 0;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.stat-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.overview-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* Aligned name / address rows */
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.person {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'name addr' 'extra extra';
+  align-items: center;
+  column-gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.people.numbered .person {
+  grid-template-columns: 1.6rem minmax(0, 1fr) auto;
+  grid-template-areas: 'index name addr' 'index extra extra';
+}
+
+.person:last-child {
+  border-bottom: 0;
+}
+
+.person-index {
+  grid-area: index;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.person-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-name .tag {
+  margin-left: 6px;
+}
+
+.person-addr {
+  grid-area: addr;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: end;
+}
+
+.person-addr code {
+  font-size: 0.85rem;
+}
+
+.person-extra {
+  grid-area: extra;
+}
+
+.addr-short {
+  display: none;
+}
+
+/* Full addresses only where the list itself is wide enough (container query, not window width). */
+.people {
+  container-type: inline-size;
+}
+
+@container (max-width: 600px) {
+  .person-addr .addr-full {
+    display: none;
+  }
+  .person-addr .addr-short {
+    display: inline;
+  }
+}
+
+@media (max-width: 820px) {
+  .overview-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
