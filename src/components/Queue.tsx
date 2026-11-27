@@ -278,17 +278,31 @@ function PendingCard({
     }, 'Proposed. It is in the shared queue for the signers to sign.')
   const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string }>()
 
-  /** Push every signature we hold to the shared queue. Never throws: links remain the fallback. */
+  /**
+   * Push every signature we hold to the shared queue. Never throws: links remain the fallback.
+   * Always tried (even while the queue status is still loading); a site without a queue just says so.
+   */
   const share = async (updated: PendingTx) => {
-    if (!sharedOn) return
     try {
-      await syncToRemote(updated)
-      setSyncMsg({ ok: true, text: 'Saved to the shared queue. Other signers will see it.' })
+      const sent = await syncToRemote(updated)
+      if (sent > 0) setSyncMsg({ ok: true, text: 'Saved to the shared queue. Other signers will see it.' })
       onShared()
     } catch (e) {
-      setSyncMsg({ ok: false, text: `Signed, but not saved to the shared queue: ${errorMessage(e)}. Send the share link instead.` })
+      if (e instanceof QueueUnavailableError) setSyncMsg({ ok: true, text: 'No shared queue on this site: send the share link to the other signers.' })
+      else setSyncMsg({ ok: false, text: `Signed, but not saved to the shared queue: ${errorMessage(e)}. Send the share link instead.` })
     }
   }
+
+  // Signatures that are only in this browser (signed before the queue status loaded, imported from a
+  // link, or after a hiccup) are sent up automatically once the shared queue is known to be on.
+  const unsyncedKey = sharedOn && unsynced > 0 ? `${p.safeTxHash}:${Object.keys(p.signatures).sort().join(',')}` : ''
+  const [autoSynced, setAutoSynced] = useState('')
+  useEffect(() => {
+    if (!unsyncedKey || autoSynced === unsyncedKey) return
+    setAutoSynced(unsyncedKey)
+    void share(p)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unsyncedKey])
 
   const sign = () =>
     run(async (acct) => {
@@ -301,7 +315,7 @@ function PendingCard({
       updateQueue((q) => upsertPending(q, updated))
       setSyncMsg(undefined)
       await share(updated)
-    }, sharedOn ? 'Signed.' : 'Signed. Share the updated link with the other signers.')
+    }, 'Signed.')
 
   const approveOnchain = () =>
     run(async () => {

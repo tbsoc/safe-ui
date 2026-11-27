@@ -28,6 +28,7 @@ const TABS: { id: Tab; label: string }[] = [
 /** Safes listed on the start screen. */
 const KNOWN_SAFES = [
   { name: 'Bread Coop core team treasury (Gnosis)', ref: 'gno:0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad' },
+  { name: 'Shared Treasury (Gnosis)', ref: 'gno:0x6A148b997e6651237F2fCfc9E30330a6480519f0' },
   { name: 'love.fund (Ethereum)', ref: 'eth:0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A' },
   { name: 'Test Safe (Gnosis)', ref: 'gno:0xFFf763aa566CFbd1622B6e8A056e519E0DeC8bCa' },
 ]
