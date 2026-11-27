@@ -6,7 +6,7 @@ import { safeAbi } from '../lib/abis'
 import { explorerTx, type ChainConfig } from '../lib/chains'
 import { decodeSafeTx } from '../lib/decode'
 import { errorMessage, formatAmount } from '../lib/format'
-import { decodePending, encodePending, extractEncoded, upsertPending, type PendingTx } from '../lib/queue'
+import { upsertPending, type PendingTx } from '../lib/queue'
 import { getClient } from '../lib/rpc'
 import { tokenList } from '../lib/tokens'
 import { storage } from '../lib/storage'
@@ -27,18 +27,11 @@ import { Addr, Card, Status } from './common'
 import { useIsProposer } from './Proposers'
 import { asChainId } from '../wagmi'
 
-export function shareLink(chain: ChainConfig, p: PendingTx) {
-  const url = new URL(window.location.href)
-  url.search = `?safe=${chain.shortName}:${p.safe}&tab=queue`
-  url.hash = `tx=${encodePending(p)}`
-  return url.toString()
-}
-
-/** Validate an incoming payload against the current Safe; returns it with only valid owner signatures. */
+/** Validate a transaction from the shared queue against the current Safe; returns it with only valid owner signatures. */
 export async function verifyIncoming(chain: ChainConfig, info: SafeInfo, p: PendingTx): Promise<PendingTx> {
-  if (p.chainId !== chain.id || !isAddressEqual(p.safe, info.address)) throw new Error('This link is for a different Safe or network.')
+  if (p.chainId !== chain.id || !isAddressEqual(p.safe, info.address)) throw new Error('This transaction is for a different Safe or network.')
   const hash = computeSafeTxHash(chain.id, info.address, p.tx)
-  if (hash !== p.safeTxHash) throw new Error('The transaction hash in this link does not match its contents.')
+  if (hash !== p.safeTxHash) throw new Error('The transaction hash does not match its contents.')
   const signatures: Record<string, Hex> = {}
   for (const [owner, sig] of Object.entries(p.signatures)) {
     try {
@@ -53,9 +46,6 @@ export async function verifyIncoming(chain: ChainConfig, info: SafeInfo, p: Pend
 
 export function Queue() {
   const { chain, info, queue, updateQueue, lastExecuted, setLastExecuted } = useSafe()
-  const [importText, setImportText] = useState('')
-  const [importError, setImportError] = useState<string>()
-  const [importNotice, setImportNotice] = useState<string>()
 
   // Shared queue (Safe Queue Service via this site's proxy). Polled so other signers' work shows up.
   const hiddenKey = `hidden:${chain.id}:${info.address.toLowerCase()}`
@@ -110,29 +100,6 @@ export function Queue() {
     .sort((a, b) => Number(BigInt(a.tx.nonce) - BigInt(b.tx.nonce)))
   const stale = queue.filter((p) => BigInt(p.tx.nonce) < info.nonce)
 
-  const doImport = async () => {
-    setImportError(undefined)
-    setImportNotice(undefined)
-    try {
-      const p = await verifyIncoming(chain, info, decodePending(extractEncoded(importText)))
-      updateQueue((q) => upsertPending(q, p))
-      setImportText('')
-      let note = `Imported with ${Object.keys(p.signatures).length} valid signature(s).`
-      if (sharedOn) {
-        try {
-          const sent = await syncToRemote(p, remoteByHash.get(p.safeTxHash) ?? null)
-          if (sent) note += ` ${sent} saved to the shared queue.`
-          await remote.refetch()
-        } catch (e) {
-          note += ` Could not save to the shared queue: ${errorMessage(e)}`
-        }
-      }
-      setImportNotice(note)
-    } catch (e) {
-      setImportError(errorMessage(e))
-    }
-  }
-
   return (
     <div className="stack">
       {lastExecuted && (
@@ -150,7 +117,7 @@ export function Queue() {
       {active.length === 0 && (
         <Card>
           <p className="muted">
-            No pending transactions{sharedOn ? '' : ' in this browser'}. Create one from Send or Allowances{sharedOn ? '' : ', or import a link a signer shared with you'}.
+            No pending transactions{sharedOn ? '' : ' in this browser'}. Create one from Send or Allowances.
           </p>
         </Card>
       )}
@@ -164,18 +131,6 @@ export function Queue() {
           onHide={() => hide(p.safeTxHash)}
         />
       ))}
-
-      <Card title="Import a shared link">
-        <p className="muted small">
-          {sharedOn ? 'Backup for when the shared queue is unavailable. ' : ''}Paste a link from another signer. Signatures are merged with the ones you
-          already have. Links are encoded, not encrypted: anyone with the link can read the transaction.
-        </p>
-        <textarea value={importText} onChange={(e) => setImportText(e.target.value)} rows={3} placeholder="https://…#tx=…" />
-        <button type="button" className="btn" onClick={doImport} disabled={!importText.trim()}>
-          Import
-        </button>
-        <Status error={importError} notice={importNotice} />
-      </Card>
 
       {stale.length > 0 && (
         <Card
@@ -214,13 +169,18 @@ function SharedQueueStatus({ state, error, onRefresh }: { state: 'loading' | 'on
   if (state === 'error')
     return (
       <p className="status warn small">
-        Shared queue unavailable right now ({errorMessage(error)}). Signatures stay in this browser; use share links until it is back.{' '}
+        Shared queue unavailable right now ({errorMessage(error)}). New signatures are kept in this browser and saved to the queue automatically when it is back. Signers can also use Approve on-chain.{' '}
         <button type="button" className="link" onClick={onRefresh}>
           Retry
         </button>
       </p>
     )
-  return <p className="status warn small">This site has no shared queue configured. Signatures stay in this browser; pass share links between signers.</p>
+  return (
+    <p className="status warn small">
+      This site has no shared queue configured, so other signers cannot see signatures made here. Use Approve on-chain instead, or set up the
+      shared queue (see the README).
+    </p>
+  )
 }
 
 function PendingCard({
@@ -240,7 +200,6 @@ function PendingCard({
   const { run, busy, error, notice, account } = useWalletAction(chain.id)
   const { signTypedDataAsync } = useSignTypedData()
   const { writeContractAsync } = useWriteContract()
-  const [copied, setCopied] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
 
   const approvals = useQuery({
@@ -288,8 +247,8 @@ function PendingCard({
       if (sent > 0) setSyncMsg({ ok: true, text: 'Saved to the shared queue. Other signers will see it.' })
       onShared()
     } catch (e) {
-      if (e instanceof QueueUnavailableError) setSyncMsg({ ok: true, text: 'No shared queue on this site: send the share link to the other signers.' })
-      else setSyncMsg({ ok: false, text: `Signed, but not saved to the shared queue: ${errorMessage(e)}. Send the share link instead.` })
+      if (e instanceof QueueUnavailableError) setSyncMsg({ ok: false, text: 'Signed, but this site has no shared queue, so other signers cannot see it. Use Approve on-chain instead.' })
+      else setSyncMsg({ ok: false, text: `Signed, but not saved to the shared queue yet: ${errorMessage(e)}. It is kept here and retried automatically.` })
     }
   }
 
@@ -337,27 +296,12 @@ function PendingCard({
       return hash
     })
 
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(shareLink(chain, p))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      window.prompt('Copy this link', shareLink(chain, p))
-    }
-  }
-
   return (
     <Card
       title={
         <>
           <span className="pill">#{p.tx.nonce}</span> {p.description || 'Transaction'}
         </>
-      }
-      actions={
-        <button type="button" className="btn ghost" onClick={copyLink}>
-          {copied ? 'Link copied' : 'Copy share link'}
-        </button>
       }
     >
       {!hashOk && <p className="status error">Stored hash does not match the transaction. Do not sign this.</p>}

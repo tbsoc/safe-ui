@@ -7,7 +7,7 @@ import { MAX_UINT96, MULTI_SEND_CALL_ONLY, STANDARD_ALLOWANCE_MODULE } from './c
 import { decodeSafeTx } from './decode'
 import { formatAmount, parseAmount } from './format'
 import { batchCalls, decodeMultiSendTransactions, encodeMultiSendTransactions } from './multisend'
-import { decodePending, encodePending, extractEncoded, upsertPending, type PendingTx } from './queue'
+import { upsertPending, type PendingTx } from './queue'
 import {
   approvedHashSignature,
   buildSafeTx,
@@ -186,7 +186,7 @@ describe('allowance calls', () => {
   })
 })
 
-describe('share links', () => {
+describe('local queue', () => {
   const tx = buildSafeTx({
     to: SAFE,
     data: encodeFunctionData({ abi: safeAbi, functionName: 'changeThreshold', args: [2n] }),
@@ -201,17 +201,6 @@ describe('share links', () => {
     createdAt: 1,
     signatures: { [owners[0].toLowerCase()]: ('0x' + 'ab'.repeat(65)) as Hex },
   }
-
-  it('round-trips through the URL fragment', () => {
-    const link = `https://example.org/?safe=base:${SAFE}#tx=${encodePending(p)}`
-    expect(decodePending(extractEncoded(link))).toEqual(p)
-  })
-
-  it('rejects malformed payloads', () => {
-    expect(() => decodePending('not-base64')).toThrow()
-    const bad = encodePending({ ...p, tx: { ...p.tx, to: 'nope' as Address } })
-    expect(() => decodePending(bad)).toThrow()
-  })
 
   it('merges signatures for the same transaction', () => {
     const other = { ...p, signatures: { [owners[1].toLowerCase()]: ('0x' + 'cd'.repeat(65)) as Hex } }

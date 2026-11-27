@@ -6,12 +6,12 @@
  *
  * Ethereum, Optimism, Celo: FORK_CHAIN=eth|oeth|celo FORK_SAFE=0x… (any Safe; only the fork is touched)
  *
- * Shared-queue mode (E2E_SHARED=1, npm run e2e:fork:shared): the site is served by `vite preview`, so
- * the real /api/safe-queue proxy runs, pointed at a local stand-in for Safe's Queue Service. Owners then
- * open the plain Safe page, never a link, and see each other's signatures through the shared queue.
+ * The site is served by `vite preview`, so the real /api/safe-queue and /api/names handlers run, pointed
+ * at a local stand-in for Safe's Queue Service. Owners open the Safe's queue page and see each other's
+ * signatures through the shared queue.
  *
  * Test keys are added as extra owners of the Bread Safe (on the fork only), as many as the
- * threshold. Owner 1 creates an allowance in the UI and signs, the others open the share link one
+ * threshold. Owner 1 creates an allowance in the UI and signs, the others open the Safe's queue one
  * after another and sign, the last one executes. Then the member spends from the allowance.
  */
 import { createRequire } from 'node:module'
@@ -73,7 +73,8 @@ const RPC = 'http://127.0.0.1:8545'
 const SAFE = cfg.safe
 const TOKEN = cfg.token.address
 const RECIPIENT = '0x000000000000000000000000000000000000bEEF'
-const SHARED = process.env.E2E_SHARED === '1'
+// The app collects signatures through the shared queue, so the run always serves the site with the proxy.
+const SHARED = true
 const distDir = resolve(process.argv[2] ?? 'dist-fork')
 const shots = process.argv[3] ? resolve(process.argv[3]) : undefined
 
@@ -221,10 +222,6 @@ function assert(cond, msg) {
   console.log(`  ✓ ${msg}`)
 }
 
-async function copyShareLink(page) {
-  await page.getByRole('button', { name: 'Copy share link' }).first().click()
-  return page.evaluate(() => navigator.clipboard.readText())
-}
 
 /** Minimal stand-in for Safe's Queue Service: same paths and fields, signatures recovered and checked. */
 function mockQueueService() {
@@ -408,7 +405,7 @@ async function main() {
     let page = p1
     for (let i = 1; i <= threshold; i++) {
       if (i > 1) {
-        const link = SHARED ? `${origin}/?safe=${cfg.short}:${SAFE}&tab=queue` : await copyShareLink(page)
+        const link = `${origin}/?safe=${cfg.short}:${SAFE}&tab=queue`
         page = await walletPage(browser, `owner${i}`)
         await page.goto(link)
         await page.getByText(`Confirmations ${i - 1}/${threshold}`).waitFor({ timeout: 60_000 })
@@ -423,7 +420,7 @@ async function main() {
       assert(stored.length === 1 && stored[0].confirmations.length === threshold, `shared queue holds the transaction with all ${threshold} signatures`)
       assert(await page.getByText('in shared queue').isVisible(), 'card shows it is in the shared queue')
     }
-    assert(true, `${threshold} owners signed via ${SHARED ? 'the shared queue (no links)' : 'share links'}`)
+    assert(true, `${threshold} owners signed via the shared queue`)
     await shot(page, 'queue-ready')
     if (SHARED) await shot(page, 'shared-queue-ready')
     await page.getByRole('button', { name: 'Execute' }).click()

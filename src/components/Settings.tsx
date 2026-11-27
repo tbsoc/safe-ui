@@ -102,7 +102,7 @@ export function Settings() {
         <p className="small">
           Open-source Safe interface for Bread Cooperative. It reads the Safe contracts directly through public RPCs. Pending transactions and
           signatures are shared through Safe&apos;s Queue Service (visible in Safe{'{Wallet}'} too), via this site&apos;s server so the API key stays private.
-          Share links work as a backup. No accounts, no tracking.
+          No accounts, no tracking.
         </p>
       </Card>
     </div>

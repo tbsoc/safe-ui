@@ -6,12 +6,11 @@ import { ConnectButton } from './components/ConnectButton'
 import { History } from './components/History'
 import { OtherChains } from './components/OtherChains'
 import { Overview } from './components/Overview'
-import { Queue, verifyIncoming } from './components/Queue'
+import { Queue } from './components/Queue'
 import { Send } from './components/Send'
 import { Settings } from './components/Settings'
 import { CHAINS, chainByShortName, type ChainConfig } from './lib/chains'
 import { errorMessage } from './lib/format'
-import { decodePending, loadQueue, saveQueue, upsertPending } from './lib/queue'
 import { loadSafeInfo, NotDeployedError, type SafeInfo } from './lib/safe'
 import { storage } from './lib/storage'
 import { isHiddenRef } from './lib/hidden'
@@ -67,9 +66,6 @@ export default function App() {
   const [info, setInfo] = useState<SafeInfo>()
   const [loadError, setLoadError] = useState<string>()
   const [notDeployed, setNotDeployed] = useState(false)
-  const [importNotice, setImportNotice] = useState<string>()
-  const [importError, setImportError] = useState<string>()
-  const [queueKey, setQueueKey] = useState(0)
 
   const setTab = useCallback((t: Tab) => setState((s) => ({ ...s, tab: t })), [])
   const openSafe = (r: SafeRef | undefined) => {
@@ -77,7 +73,7 @@ export default function App() {
     setState({ ref: r, tab: 'overview' })
   }
 
-  useEffect(() => writeUrl(ref, tab, true), [ref, tab])
+  useEffect(() => writeUrl(ref, tab), [ref, tab])
 
   const reload = useCallback(async () => {
     if (!ref) return
@@ -98,26 +94,6 @@ export default function App() {
   useEffect(() => {
     reload()
   }, [reload])
-
-  // A shared link carries a pending transaction in the fragment: verify it and add it to the local queue.
-  useEffect(() => {
-    if (!info || !ref) return
-    const m = window.location.hash.match(/tx=([A-Za-z0-9_-]+)/)
-    if (!m) return
-    ;(async () => {
-      try {
-        const p = await verifyIncoming(ref.chain, info, decodePending(m[1]))
-        saveQueue(ref.chain.id, info.address, upsertPending(loadQueue(ref.chain.id, info.address), p))
-        setQueueKey((k) => k + 1)
-        setImportNotice(`Loaded shared transaction #${p.tx.nonce} with ${Object.keys(p.signatures).length} valid signature(s).`)
-        setTab('queue')
-      } catch (e) {
-        setImportError(errorMessage(e))
-      } finally {
-        writeUrl(ref, 'queue')
-      }
-    })()
-  }, [info, ref, setTab])
 
   return (
     <div className="app">
@@ -153,7 +129,6 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <Status error={importError} notice={importNotice} />
           {loadError && (
             <div className="card">
               {notDeployed ? (
@@ -175,7 +150,7 @@ export default function App() {
           )}
           {!info && !loadError && <p className="muted">Loading Safe…</p>}
           {info && (
-            <SafeProvider key={`${ref.chain.id}:${ref.address}:${queueKey}`} chain={ref.chain} info={info} reload={reload} setTab={setTab}>
+            <SafeProvider key={`${ref.chain.id}:${ref.address}`} chain={ref.chain} info={info} reload={reload} setTab={setTab}>
               {tab === 'overview' && <Overview />}
               {tab === 'send' && <Send />}
               {tab === 'allowances' && <Allowances />}

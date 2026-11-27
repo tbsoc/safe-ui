@@ -15,7 +15,7 @@ Safe{Wallet} now requires a paid plan to add new spending limits. The limits the
 | Overview | Balances, signers and threshold, nonce, enabled modules. The header lists the same address on other chains with each one's threshold |
 | Send | Propose a native-token or ERC-20 transfer |
 | Allowances | Owners: set, edit, reset, delete allowances and remove members. Members: spend from their allowance |
-| Queue | Sign, approve on-chain, execute, share links with other signers |
+| Queue | Sign, approve on-chain, execute; every signer sees the same queue |
 | History | Multisig and allowance events (from Blockscout, with an RPC fallback) |
 | Settings | Add tokens, use your own RPC endpoints |
 
@@ -45,8 +45,6 @@ Limits of the contract worth knowing:
 
 Nothing from the shared queue is trusted blindly: every transaction is re-hashed and every signature is checked against the Safe's current signers before it is shown or counted. Signatures from Safe{Wallet} in the older eth_sign format are accepted.
 
-**Share links are the backup.** "Copy share link" packs the transaction and its signatures into the part of the URL after `#`, which browsers never send to a server. Use them if the shared queue is down or not configured. Links are encoded, not encrypted: anyone with the link can read the transaction, but nobody can change it without invalidating the signatures.
-
 ### Proposers
 
 Proposers (called "delegates" in Safe's API) can put transactions in a Safe's shared queue without being signers, for example a treasurer preparing payments. They cannot sign; signers still have to reach the threshold. Signers add or remove them in the Overview tab's Proposers card by signing a free message (no transaction). A proposer can remove themselves. Proposers live in Safe's Queue Service, so Safe{Wallet} shows the same list. They apply to one Safe on one network, and need the shared queue.
@@ -66,7 +64,7 @@ Safe's API requires a key (free Builder plan: 50,000 requests a month, from the 
 | `SAFE_API_KEY` (type: Secret) | Required. Your Safe API key. |
 | `ALLOWED_SAFES` | Recommended. Comma-separated `chainId:0xSafe` (or `0xSafe` for every chain). Only these Safes can use the queue through your site, so nobody else can spend your API quota. Already set for the two Bread Safes in `wrangler.jsonc` (Workers). |
 
-Without `SAFE_API_KEY` (or on a host without the function, like a plain static deploy), the app says the shared queue is off and falls back to share links.
+Without `SAFE_API_KEY` (or on a host without the Worker, like a plain static deploy), the app says the shared queue is off. Signatures then stay in each signer's browser, so signers have to use **Approve on-chain** instead.
 
 ## Development
 
@@ -104,7 +102,7 @@ npm test                              # includes proxy + queue client unit tests
 SAFE_API_KEY=… npm run test:queue     # live: reads real core team transactions through the proxy, checks hashes and signatures,
                                       # and confirms Safe refuses a proposal signed by a non-owner (nothing is stored)
 FORK_CHAIN=gno npm run fork           # then:
-FORK_CHAIN=gno npm run e2e:fork:shared  # browser: 5 owners sign with no links, via the real proxy and a local stand-in for Safe's service
+FORK_CHAIN=gno npm run e2e:fork  # browser: 5 owners sign via the real proxy and a local stand-in for Safe's service
 ```
 
 ### Fork tests
@@ -122,7 +120,7 @@ These run the real Bread Safes and modules on a local copy of the chain. They ad
 npm run fork                    # terminal 1: local Base fork on :8545
 npm run test:fork               # terminal 2: library-level end-to-end tests
 # restart the fork for a clean state, then:
-npm run e2e:fork                # browser test: owners sign + execute via share links, member spends
+npm run e2e:fork                # browser test: owners sign + execute via the shared queue, member spends
 
 # same for Gnosis:
 FORK_CHAIN=gno npm run fork
@@ -146,7 +144,7 @@ Security headers come from `public/_headers`. The app routes with query strings,
 
 **Cloudflare Pages** also works: build command `npm run build`, output `dist`, `NODE_VERSION` = `22`, same two settings. Pages uses the `functions/` folder instead of `worker/`.
 
-Vercel and Netlify serve the static app but not the Cloudflare Worker/function, so the shared queue is off there (share links still work).
+Vercel and Netlify serve the static app but not the Cloudflare Worker/function, so the shared queue and address book are off there.
 
 **Vercel:** New Project, import `tbsoc/safe-ui`. The included `vercel.json` sets everything; no settings to change.
 
