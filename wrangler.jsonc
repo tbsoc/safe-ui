@@ -16,8 +16,6 @@
   // Only these Safes can use the shared queue through this site (protects the Safe API quota).
   // SAFE_API_KEY is a secret: set it in the dashboard or with `npx wrangler secret put SAFE_API_KEY`.
   "vars": {
-    // chainId:address limits a Safe to one network; a bare address allows every network.
-    // Core team: every network. love.fund: Ethereum only. Shared Treasury and test Safe: Gnosis only.
-    "ALLOWED_SAFES": "0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad,1:0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A,100:0x6A148b997e6651237F2fCfc9E30330a6480519f0,100:0xFFf763aa566CFbd1622B6e8A056e519E0DeC8bCa"
+    "ALLOWED_SAFES": "0x918dEf5d593F46735f74F9E2B280Fe51AF3A99ad,0x6406a78cef5D0E90d3aF1Ac505D0CA85109c102A,0x6A148b997e6651237F2fCfc9E30330a6480519f0,0xFFf763aa566CFbd1622B6e8A056e519E0DeC8bCa"
   }
 }

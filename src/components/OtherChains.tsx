@@ -3,6 +3,7 @@ import type { Address } from 'viem'
 import { safeAbi } from '../lib/abis'
 import { CHAINS, type ChainConfig } from '../lib/chains'
 import { getClient } from '../lib/rpc'
+import { isHiddenSafe } from '../lib/hidden'
 
 interface Sibling {
   chain: ChainConfig
@@ -16,7 +17,7 @@ interface Sibling {
  */
 async function findSiblings(current: number, address: Address): Promise<Sibling[]> {
   const results = await Promise.all(
-    CHAINS.filter((c) => c.id !== current).map(async (chain) => {
+    CHAINS.filter((c) => c.id !== current && !isHiddenSafe(c.id, address)).map(async (chain) => {
       try {
         const client = getClient(chain.id)
         const code = await client.getCode({ address })

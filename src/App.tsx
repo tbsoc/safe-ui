@@ -14,6 +14,7 @@ import { errorMessage } from './lib/format'
 import { decodePending, loadQueue, saveQueue, upsertPending } from './lib/queue'
 import { loadSafeInfo, NotDeployedError, type SafeInfo } from './lib/safe'
 import { storage } from './lib/storage'
+import { isHiddenRef } from './lib/hidden'
 import { SafeProvider, type Tab } from './state'
 
 const TABS: { id: Tab; label: string }[] = [
@@ -199,7 +200,7 @@ function Landing({ onOpen }: { onOpen: (r: SafeRef) => void }) {
   const [chainShort, setChainShort] = useState('base')
   const [addr, setAddr] = useState('')
   const [error, setError] = useState<string>()
-  const recent = storage.get<string[]>('recentSafes', [])
+  const recent = storage.get<string[]>('recentSafes', []).filter((r) => !isHiddenRef(r))
   const list = [...KNOWN_SAFES.map((k) => ({ label: k.name, ref: k.ref })), ...recent.filter((r) => !KNOWN_SAFES.some((k) => k.ref.toLowerCase() === r.toLowerCase())).map((r) => ({ label: r, ref: r }))]
 
   const submit = (e: React.FormEvent) => {
