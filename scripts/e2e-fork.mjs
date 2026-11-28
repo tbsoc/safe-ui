@@ -449,6 +449,17 @@ async function main() {
       assert((await page.locator('#send-to').inputValue()) === accts.member.address, 'typing "ali" and picking Alice fills in her address')
       assert(await page.getByText('✓ Alice').isVisible(), 'the field confirms the name of the entered address')
       await shot(page, 'name-lookup')
+
+      // Same lookup in the allowance form's Member field, and the list must sit right under the field.
+      await page.getByRole('tab', { name: 'Allowances' }).click()
+      await page.locator('#al-delegate').fill('ali')
+      const list = page.locator('.suggest')
+      await list.waitFor()
+      const gap = (await list.boundingBox()).y - ((await page.locator('#al-delegate').boundingBox()).y + (await page.locator('#al-delegate').boundingBox()).height)
+      assert(gap >= 0 && gap < 12, `suggestions open directly under the Member field (gap ${Math.round(gap)}px)`)
+      await page.getByRole('option', { name: /Alice/ }).click()
+      assert((await page.locator('#al-delegate').inputValue()) === accts.member.address, 'picking Alice in the allowance form fills in her address')
+      await page.locator('#al-delegate').fill('')
     }
 
     // Member spends 0.4 from the allowance.
