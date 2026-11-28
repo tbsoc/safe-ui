@@ -8,6 +8,7 @@ import { tokenList } from '../lib/tokens'
 import { useSafe } from '../state'
 import { Card, Field, MyAddressButton, Status, TokenSelect } from './common'
 import { useIsProposer } from './Proposers'
+import { AddressInput } from './AddressInput'
 import { MyAllowanceSpend, useMyAllowances } from './MyAllowances'
 
 export function Send() {
@@ -94,7 +95,7 @@ export function Send() {
         </Field>
         <Field label="Recipient" htmlFor="send-to">
           <div className="form inline">
-            <input id="send-to" value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x…" spellCheck={false} />
+            <AddressInput id="send-to" value={to} onChange={setTo} />
             <MyAddressButton onPick={setTo} />
           </div>
         </Field>

@@ -861,3 +861,58 @@ summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Address field with name lookup */
+.addr-input {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.suggest li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.suggest li.active {
+  background: var(--accent-soft);
+}
+
+.suggest code {
+  color: var(--muted);
+}
+
+.addr-known {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.addr-input > input,
+.form.inline .addr-input > input {
+  flex: none;
+  width: 100%;
+}

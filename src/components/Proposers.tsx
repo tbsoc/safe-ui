@@ -7,6 +7,7 @@ import { addProposer, delegateTypedData, isProposerFor, listProposers, removePro
 import { QueueUnavailableError } from '../lib/safeQueue'
 import { useSafe, useWalletAction } from '../state'
 import { Addr, Card, Field, Status } from './common'
+import { AddressInput } from './AddressInput'
 
 /** Is the connected wallet a proposer for the current Safe and chain? (false when the shared queue is off) */
 export function useIsProposer(account?: Address) {
@@ -109,7 +110,7 @@ export function Proposers() {
       {isOwner(account) ? (
         <form className="form" onSubmit={add} style={{ marginTop: 12 }}>
           <div className="form inline">
-            <input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="Proposer address 0x…" spellCheck={false} aria-label="Proposer address" />
+            <AddressInput value={addr} onChange={setAddr} placeholder="Proposer: name or 0x…" ariaLabel="Proposer address" />
             <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Name (optional)" maxLength={50} aria-label="Proposer name" />
             <button type="submit" className="btn" disabled={busy || !isAddress(addr)}>
               Add proposer

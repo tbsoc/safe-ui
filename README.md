@@ -51,7 +51,7 @@ Proposers (called "delegates" in Safe's API) can put transactions in a Safe's sh
 
 ### Shared address book
 
-Names for addresses (members, signers, recipients) that everyone sees next to addresses across the app. Edited in **Settings → Address book**. Anyone visiting the site can read them; only current signers of the Safes in `NAME_EDITORS` (in `wrangler.jsonc`, as `chainId:0xSafe`) can add, change or remove a name, by signing a free message. The Worker checks the signature and reads the Safe's signers on-chain before saving.
+Names for addresses (members, signers, recipients) that everyone sees next to addresses across the app. Every address field (recipient, member, proposer, address book) also accepts a name: type part of it and pick from the matches to fill in the address. Edited in **Settings → Address book**. Anyone visiting the site can read them; only current signers of the Safes in `NAME_EDITORS` (in `wrangler.jsonc`, as `chainId:0xSafe`) can add, change or remove a name, by signing a free message. The Worker checks the signature and reads the Safe's signers on-chain before saving.
 
 Names are stored in a Cloudflare KV namespace bound as `NAMES`. `wrangler.jsonc` gives no namespace id, so Cloudflare creates one on the first deploy. If your deploy refuses that, create a namespace under Storage & Databases → KV and put its id in `kv_namespaces`. Without a namespace the app simply shows no names.
 

@@ -441,6 +441,14 @@ async function main() {
       await page.getByRole('tab', { name: 'Allowances' }).click()
       await page.locator('td .addr-name', { hasText: 'Alice' }).first().waitFor({ timeout: 30_000 })
       assert(true, 'signer named the member; the name shows in the allowances table')
+
+      // Name lookup in address fields: type part of a name, pick it, the address is filled in.
+      await page.getByRole('tab', { name: 'Send' }).click()
+      await page.locator('#send-to').fill('ali')
+      await page.getByRole('option', { name: /Alice/ }).click()
+      assert((await page.locator('#send-to').inputValue()) === accts.member.address, 'typing "ali" and picking Alice fills in her address')
+      assert(await page.getByText('✓ Alice').isVisible(), 'the field confirms the name of the entered address')
+      await shot(page, 'name-lookup')
     }
 
     // Member spends 0.4 from the allowance.
@@ -449,7 +457,7 @@ async function main() {
     await connect(m)
     await m.getByText('Spend your allowance').waitFor({ timeout: 60_000 })
     const before = await balanceOf(RECIPIENT)
-    await m.getByPlaceholder('Recipient 0x…').fill(RECIPIENT)
+    await m.getByLabel('Recipient', { exact: true }).fill(RECIPIENT)
     await m.getByPlaceholder(`Amount ${sym}`).fill('0.4')
     await shot(m, 'member-spend')
     await m.getByRole('button', { name: 'Send', exact: true }).click()
@@ -467,7 +475,7 @@ async function main() {
     await m.goto(`${origin}/?safe=${cfg.short}:${SAFE}`)
     await m.getByText('You have an allowance on this Safe').waitFor({ timeout: 60_000 })
     await m.getByRole('button', { name: 'Send from my allowance' }).click()
-    await m.getByPlaceholder('Recipient 0x…').fill(RECIPIENT)
+    await m.getByLabel('Recipient', { exact: true }).fill(RECIPIENT)
     await m.getByPlaceholder(`Amount ${sym}`).fill('0.1')
     const before3 = await balanceOf(RECIPIENT)
     await m.getByRole('button', { name: 'Send', exact: true }).click()

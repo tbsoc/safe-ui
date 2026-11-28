@@ -6,6 +6,7 @@ import { MAX_NAME, nameTypedData, saveName } from '../lib/names'
 import { useNames } from '../names'
 import { useSafe, useWalletAction } from '../state'
 import { Addr, Card, Status } from './common'
+import { AddressInput } from './AddressInput'
 
 /** Shared address book: everyone sees the names; signers of the co-op Safes can change them. */
 export function AddressBook() {
@@ -57,7 +58,7 @@ export function AddressBook() {
           if (isAddress(addr) && name.trim()) void save(getAddress(addr), name)
         }}
       >
-        <input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="Address 0x…" spellCheck={false} aria-label="Address to name" />
+        <AddressInput value={addr} onChange={setAddr} placeholder="Address 0x… (or a name to rename)" ariaLabel="Address to name" />
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" maxLength={MAX_NAME} aria-label="Name" />
         <button type="submit" className="btn" disabled={busy || !isAddress(addr) || !name.trim()}>
           Save name
